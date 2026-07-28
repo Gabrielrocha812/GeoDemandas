@@ -1,0 +1,11 @@
+# Ambiente
+.venv/
+__pycache__/
+*.pyc
+
+# Configuração local e banco
+.env
+*.db
+geodemandas.db
+*-preview.png
+uploads/

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Visão geral · GeoDemandas{% endblock %}
+{% set status_styles = {'Aberto':'bg-amber-50 text-amber-700 ring-amber-200','Em Andamento':'bg-sky-50 text-sky-700 ring-sky-200','Concluído':'bg-emerald-50 text-emerald-700 ring-emerald-200'} %}
+{% set priority_styles = {'Baixa':'bg-slate-100 text-slate-600','Média':'bg-blue-50 text-blue-700','Alta':'bg-orange-50 text-orange-700','Urgente':'bg-red-50 text-red-700'} %}
+
+{% block content %}
+<div x-data="{ loading: true }" x-init="setTimeout(() => loading=false, 380)" class="space-y-7">
+  <header class="reveal flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+    <div>
+      <div class="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-white/70 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.2em] text-brandt shadow-sm">
+        <span class="pulse-ring h-2 w-2 rounded-full bg-emerald-500 text-emerald-400"></span>
+        Operação em tempo real
+      </div>
+      <h1 class="text-3xl font-black tracking-[-.035em] text-slate-950 sm:text-4xl">Central de demandas</h1>
+      <p class="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-500">Acompanhe prioridades, responsáveis e o ritmo da operação em uma visão inteligente.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <a href="/demandas/nova" class="btn-premium shine">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m7-7H5"/></svg>
+        Nova demanda
+      </a>
+      <div class="glass flex items-center gap-3 rounded-2xl px-4 py-3">
+      <div class="brand-mark flex h-10 w-10 items-center justify-center rounded-xl text-white">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      </div>
+      <div><p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Canal de entrada</p><p class="mt-0.5 text-xs font-extrabold text-slate-800">E-mail + Active Directory</p></div>
+      </div>
+    </div>
+  </header>
+
+  <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4" aria-label="Indicadores">
+    {% set cards = [
+      ('Total de demandas', metrics.total, 'text-slate-900', 'rgba(15,23,42,.09)', 'M4 6h16M4 12h16M4 18h10'),
+      ('Abertas', metrics.abertos, 'text-amber-600', 'rgba(245,158,11,.13)', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'),
+      ('Em andamento', metrics.em_andamento, 'text-sky-600', 'rgba(14,165,233,.13)', 'M13 10V3L4 14h7v7l9-11h-7z'),
+      ('Concluídas', metrics.concluidos, 'text-emerald-600', 'rgba(22,179,100,.14)', 'M5 13l4 4L19 7')
+    ] %}
+    {% for label, value, color, glow, icon in cards %}
+    <article class="premium-card metric-card reveal p-5 sm:p-6" style="--delay:{{ loop.index0 * 70 + 80 }}ms;--glow:{{ glow }}">
+      <div class="flex items-start justify-between">
+        <div><p class="text-xs font-extrabold uppercase tracking-[.12em] text-slate-400">{{ label }}</p><p class="mt-4 text-4xl font-black tracking-[-.04em] {{ color }}" data-counter="{{ value }}">0</p></div>
+        <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 {{ color }} shadow-inner"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="{{ icon }}"/></svg></div>
+      </div>
+      <div class="mt-5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div class="h-full origin-left rounded-full bg-current {{ color }} transition-transform duration-700" style="width:{{ [20 + value * 8, 100]|min }}%"></div></div>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="premium-card reveal p-4 sm:p-5" style="--delay:360ms">
+    <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div><p class="text-sm font-black text-slate-900">Filtros inteligentes</p><p class="mt-1 text-xs font-medium text-slate-400">Refine a fila operacional em um clique</p></div>
+      <div class="flex flex-wrap gap-2">
+        <a href="/" class="rounded-xl px-3.5 py-2 text-xs font-extrabold transition {% if not active_status and not active_priority %}bg-slate-900 text-white shadow-lg{% else %}bg-slate-50 text-slate-600 hover:bg-slate-100{% endif %}">Todos</a>
+        {% for st in ['Aberto','Em Andamento','Concluído'] %}
+        <a href="/?status={{ st }}" class="rounded-xl px-3.5 py-2 text-xs font-extrabold transition {% if active_status == st %}bg-brandt text-white shadow-lg{% else %}bg-slate-50 text-slate-600 hover:bg-emerald-50 hover:text-brandt{% endif %}">{{ st }}</a>
+        {% endfor %}
+        <span class="mx-1 hidden h-8 w-px bg-slate-200 sm:block"></span>
+        {% for pr in ['Baixa','Média','Alta','Urgente'] %}
+        <a href="/?priority={{ pr }}" class="rounded-xl px-3.5 py-2 text-xs font-extrabold transition {% if active_priority == pr %}bg-slate-900 text-white shadow-lg{% else %}bg-slate-50 text-slate-600 hover:bg-slate-100{% endif %}">{{ pr }}</a>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <div x-show="loading" class="space-y-3"><div class="skeleton h-28 rounded-3xl"></div><div class="skeleton h-28 rounded-3xl"></div><div class="skeleton h-28 rounded-3xl"></div></div>
+  <section x-show="!loading" x-cloak class="space-y-3" aria-label="Lista de demandas">
+    {% if tickets %}
+      {% for ticket in tickets %}
+      <a href="/tickets/{{ ticket.id }}" class="premium-card ticket-row reveal group block p-5 sm:p-6" style="--delay:{{ loop.index0 * 45 }}ms">
+        <div class="flex items-start gap-4">
+          <div class="hidden h-14 w-1 shrink-0 rounded-full bg-gradient-to-b {% if ticket.priority.value == 'Urgente' %}from-red-400 to-red-600{% elif ticket.priority.value == 'Alta' %}from-orange-300 to-orange-500{% else %}from-emerald-300 to-brandt{% endif %} sm:block"></div>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-mono text-[11px] font-black tracking-wider text-slate-400">#{{ '%04d'|format(ticket.id) }}</span>
+              <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset {{ status_styles.get(ticket.status.value,'') }}"><span class="h-1.5 w-1.5 rounded-full bg-current"></span>{{ ticket.status.value }}</span>
+              <span class="rounded-full px-2.5 py-1 text-[10px] font-extrabold {{ priority_styles.get(ticket.priority.value,'') }}">{{ ticket.priority.value }}</span>
+            </div>
+            <h2 class="mt-3 truncate text-base font-black text-slate-900 transition-colors group-hover:text-brandt sm:text-lg">{{ ticket.subject }}</h2>
+            <p class="mt-1 line-clamp-1 text-sm font-medium text-slate-500">{{ ticket.body }}</p>
+          </div>
+          <div class="hidden shrink-0 items-center gap-3 md:flex">
+            <div class="brand-mark flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black text-white">{{ ticket.requester.full_name[0]|upper }}</div>
+            <div class="w-36"><p class="truncate text-xs font-extrabold text-slate-800">{{ ticket.requester.full_name }}</p><p class="mt-1 truncate text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ ticket.created_at.strftime('%d/%m · %H:%M') }}</p></div>
+            <svg class="h-5 w-5 text-slate-300 transition group-hover:translate-x-1 group-hover:text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="premium-card flex flex-col items-center px-6 py-20 text-center">
+        <div class="brand-mark float-soft flex h-20 w-20 items-center justify-center rounded-3xl text-white"><svg class="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg></div>
+        <h2 class="mt-6 text-xl font-black text-slate-900">Sua fila está limpa</h2><p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Novas demandas aparecerão automaticamente assim que forem validadas.</p>
+      </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

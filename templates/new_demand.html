@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Nova demanda · GeoDemandas{% endblock %}
+
+{% block content %}
+<div x-data="{
+  subjectCount: 0,
+  bodyCount: 0,
+  files: [],
+  handleFiles(event) { this.files = Array.from(event.target.files); },
+  fileSize(size) { return size < 1048576 ? `${(size/1024).toFixed(0)} KB` : `${(size/1048576).toFixed(1)} MB`; }
+}" class="mx-auto max-w-5xl space-y-7">
+  <header class="reveal">
+    <a href="/" class="mb-5 inline-flex items-center gap-2 text-sm font-extrabold text-slate-500 transition hover:text-brandt">
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+      Voltar à visão geral
+    </a>
+    <div class="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <div class="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.2em] text-brandt">
+          <span class="pulse-ring h-2 w-2 rounded-full bg-emerald-500 text-emerald-400"></span>
+          Novo atendimento
+        </div>
+        <h1 class="text-3xl font-black tracking-[-.04em] text-slate-950 sm:text-4xl">Cadastre sua demanda</h1>
+        <p class="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-500">Descreva o que precisa com clareza. Você receberá confirmações e atualizações por e-mail durante todo o atendimento.</p>
+      </div>
+
+      <div class="glass flex items-center gap-3 rounded-2xl px-4 py-3">
+        <div class="brand-mark flex h-10 w-10 items-center justify-center rounded-xl text-white"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg></div>
+        <div><p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Notificações</p><p class="text-xs font-extrabold text-slate-800">Acompanhamento por e-mail</p></div>
+      </div>
+    </div>
+  </header>
+
+  {% if error %}
+  <div role="alert" class="reveal flex gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+    <svg class="mt-0.5 h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zM12 15.75h.007v.008H12v-.008z"/></svg>
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <form method="post" action="/demandas/nova" enctype="multipart/form-data" class="premium-card reveal overflow-visible p-5 sm:p-8" style="--delay:100ms" data-loading-form>
+    <div class="grid gap-7">
+      <div>
+        <div class="mb-2 flex items-center justify-between">
+          <label for="subject" class="text-xs font-black uppercase tracking-wider text-slate-600">Título da demanda</label>
+          <span class="text-[10px] font-bold text-slate-400"><span x-text="subjectCount">0</span>/500</span>
+        </div>
+        <input
+          id="subject"
+          name="subject"
+          type="text"
+          required
+          minlength="5"
+          maxlength="500"
+          value="{{ form.subject if form else '' }}"
+          @input="subjectCount = $event.target.value.length"
+          placeholder="Ex.: Ajuste na base cartográfica do Projeto Alpha"
+          class="field-premium"
+        >
+        <p class="mt-2 text-xs font-medium text-slate-400">Use um título curto que ajude a equipe a identificar o assunto.</p>
+      </div>
+
+      <fieldset>
+        <legend class="mb-3 text-xs font-black uppercase tracking-wider text-slate-600">Prioridade</legend>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {% for value, label, color in [
+            ('Baixa','Baixa','peer-checked:border-slate-400 peer-checked:bg-slate-50'),
+            ('Média','Média','peer-checked:border-sky-400 peer-checked:bg-sky-50'),
+            ('Alta','Alta','peer-checked:border-orange-400 peer-checked:bg-orange-50'),
+            ('Urgente','Urgente','peer-checked:border-red-400 peer-checked:bg-red-50')
+          ] %}
+          <label class="cursor-pointer">
+            <input type="radio" name="priority" value="{{ value }}" class="peer sr-only" {% if (form and form.priority == value) or (not form and value == 'Média') %}checked{% endif %}>
+            <span class="flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-extrabold text-slate-600 transition hover:-translate-y-0.5 hover:shadow-sm {{ color }}">{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div>
+        <div class="mb-2 flex items-center justify-between">
+          <label for="body" class="text-xs font-black uppercase tracking-wider text-slate-600">Descrição detalhada</label>
+          <span class="text-[10px] font-bold text-slate-400"><span x-text="bodyCount">0</span> caracteres</span>
+        </div>
+        <textarea
+          id="body"
+          name="body"
+          required
+          minlength="20"
+          rows="9"
+          @input="bodyCount = $event.target.value.length"
+          placeholder="Explique o contexto, o resultado esperado, o impacto e qualquer prazo relevante..."
+          class="field-premium resize-y py-4 leading-7"
+        >{{ form.body if form else '' }}</textarea>
+        <div class="mt-3 grid gap-2 text-xs font-medium text-slate-500 sm:grid-cols-3">
+          <span class="flex items-center gap-2"><svg class="h-4 w-4 text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Informe o contexto</span>
+          <span class="flex items-center gap-2"><svg class="h-4 w-4 text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Descreva o impacto</span>
+          <span class="flex items-center gap-2"><svg class="h-4 w-4 text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Indique o prazo</span>
+        </div>
+      </div>
+
+      <div>
+        <label for="attachments" class="mb-2 block text-xs font-black uppercase tracking-wider text-slate-600">Anexos</label>
+        <label for="attachments" class="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center transition hover:border-brandt/40 hover:bg-emerald-50/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-brandt shadow-sm transition group-hover:-translate-y-1 group-hover:shadow-md">
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0L7 9m5-5l5 5M5 15v4a1 1 0 001 1h12a1 1 0 001-1v-4"/></svg>
+          </div>
+          <p class="mt-3 text-sm font-extrabold text-slate-800">Clique para selecionar arquivos</p>
+          <p class="mt-1 text-xs font-medium text-slate-400">Qualquer formato · até 10 arquivos · 25 MB por arquivo</p>
+        </label>
+        <input id="attachments" name="attachments" type="file" multiple class="sr-only" @change="handleFiles($event)">
+        <div x-show="files.length" class="mt-3 grid gap-2 sm:grid-cols-2" x-cloak>
+          <template x-for="file in files" :key="`${file.name}-${file.size}`">
+            <div class="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-3 py-2.5">
+              <svg class="h-5 w-5 shrink-0 text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828L18 9.828a4 4 0 10-5.656-5.656L5.758 10.758a6 6 0 108.484 8.484L20.5 13"/></svg>
+              <div class="min-w-0"><p class="truncate text-xs font-bold text-slate-700" x-text="file.name"></p><p class="text-[10px] text-slate-400" x-text="fileSize(file.size)"></p></div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div class="flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-xs font-medium text-slate-400">A confirmação será enviada para <strong class="text-slate-600">{{ current_user.email }}</strong>.</p>
+        <button type="submit" data-loading-text="Cadastrando..." class="btn-premium shine px-6">
+          <span data-button-label>Cadastrar demanda</span>
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m7-7H5"/></svg>
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

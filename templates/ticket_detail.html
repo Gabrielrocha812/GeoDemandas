@@ -1,0 +1,521 @@
+{% extends "base.html" %}
+{% block title %}Chamado #{{ '%04d'|format(ticket.id) }} · GeoDemandas Brandt{% endblock %}
+
+{% set status_styles = {
+  'Aberto': 'bg-amber-50 text-amber-700 ring-amber-600/10',
+  'Em Andamento': 'bg-sky-50 text-sky-700 ring-sky-600/10',
+  'Concluído': 'bg-emerald-50 text-emerald-700 ring-emerald-600/10'
+} %}
+{% set priority_styles = {
+  'Baixa': 'bg-slate-100 text-slate-600',
+  'Média': 'bg-blue-50 text-blue-700',
+  'Alta': 'bg-orange-50 text-orange-700',
+  'Urgente': 'bg-red-50 text-red-700'
+} %}
+
+{% block content %}
+<div
+  x-data="ticketDetail({
+    ticketId: {{ ticket.id }},
+    status: '{{ ticket.status.value }}',
+    assigneeId: {{ ticket.assignee_id or 'null' }},
+    assigneeName: {{ (ticket.assignee.full_name if ticket.assignee else none)|tojson|forceescape }},
+    commentIds: {{ ticket.comments|map(attribute='id')|list|tojson }}
+  })"
+  x-init="init()"
+>
+  <!-- Voltar -->
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+  <a href="/" class="btn-secondary">
+    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+    </svg>
+    Voltar à visão geral
+  </a>
+  <div class="glass flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-500" aria-live="polite">
+    <span class="h-2 w-2 rounded-full" :class="syncState === 'online' ? 'bg-emerald-500' : syncState === 'syncing' ? 'bg-amber-400 animate-pulse' : 'bg-red-500'"></span>
+    <span x-text="syncState === 'online' ? 'Atualização automática ativa' : syncState === 'syncing' ? 'Sincronizando...' : 'Tentando reconectar...'"></span>
+  </div>
+  </div>
+  {% if request.query_params.get('criada') %}
+  <div role="status" class="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-extrabold text-emerald-800 shadow-sm">
+    <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+    Demanda cadastrada com sucesso. Uma confirmação será enviada ao seu e-mail.
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+
+    <!-- ==================== COLUNA PRINCIPAL ==================== -->
+    <div class="space-y-6 lg:col-span-2">
+
+      <!-- Card do chamado -->
+      <div class="premium-card animate-fade-up p-6 sm:p-8">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono text-xs font-bold text-slate-300">#{{ '%04d'|format(ticket.id) }}</span>
+          <span
+            class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset"
+            :class="{
+              'bg-amber-50 text-amber-700 ring-amber-600/10': status === 'Aberto',
+              'bg-sky-50 text-sky-700 ring-sky-600/10': status === 'Em Andamento',
+              'bg-emerald-50 text-emerald-700 ring-emerald-600/10': status === 'Concluído'
+            }"
+            x-text="status"
+          ></span>
+          <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{ priority_styles.get(ticket.priority.value, '') }}">
+            {{ ticket.priority.value }}
+          </span>
+        </div>
+
+        <h1 class="mt-3 text-2xl font-black tracking-[-.035em] text-slate-950 sm:text-3xl">{{ ticket.subject }}</h1>
+
+        <div class="mt-4 flex items-center gap-3 border-b border-slate-100 pb-5">
+          <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-brandt to-brandt-light text-sm font-bold text-white">
+            {{ ticket.requester.full_name[0]|upper }}
+          </div>
+          <div>
+            <p class="text-sm font-bold text-slate-900">{{ ticket.requester.full_name }}</p>
+            <p class="text-xs text-slate-400">
+              {{ ticket.requester.email }} · {{ ticket.requester.department or 'Sem depto.' }}
+            </p>
+          </div>
+          <span class="ml-auto text-xs text-slate-400">{{ ticket.created_at.strftime('%d/%m/%Y %H:%M') }}</span>
+        </div>
+
+        <!-- Corpo original do e-mail -->
+        <div class="mt-5">
+          <p class="mb-2 text-xs font-bold uppercase tracking-widest text-slate-300">Descrição original (e-mail)</p>
+          <div class="rounded-xl bg-slate-50/70 p-5 text-sm leading-relaxed text-slate-700">
+            <pre class="whitespace-pre-wrap break-words font-sans">{{ ticket.body }}</pre>
+          </div>
+        </div>
+        {% set initial_attachments = ticket.attachments|selectattr('comment_id', 'none')|list %}
+        {% if initial_attachments %}
+        <div class="mt-5">
+          <p class="mb-3 text-xs font-bold uppercase tracking-widest text-slate-300">Anexos da abertura</p>
+          <div class="grid gap-3 sm:grid-cols-2">
+            {% for attachment in initial_attachments %}
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              {% if attachment.content_type in ['image/jpeg','image/png','image/gif','image/webp'] %}
+              <a href="/api/attachments/{{ attachment.id }}" target="_blank" class="block bg-slate-100">
+                <img src="/api/attachments/{{ attachment.id }}" alt="Preview de {{ attachment.original_name }}" class="h-52 w-full object-contain transition duration-300 hover:scale-[1.02]" loading="lazy">
+              </a>
+              {% elif attachment.content_type == 'application/pdf' %}
+              <iframe src="/api/attachments/{{ attachment.id }}#toolbar=0" title="Preview de {{ attachment.original_name }}" class="h-64 w-full bg-slate-100"></iframe>
+              {% endif %}
+              <div class="flex items-center justify-between gap-3 p-3">
+                <div class="min-w-0"><p class="truncate text-xs font-extrabold text-slate-700">{{ attachment.original_name }}</p><p class="mt-0.5 text-[10px] text-slate-400">{{ '%.1f'|format(attachment.size_bytes / 1048576) }} MB</p></div>
+                <a href="/api/attachments/{{ attachment.id }}?download=true" class="btn-secondary min-h-9 shrink-0 px-3 py-1.5 text-xs">Baixar</a>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- ==================== TIMELINE ==================== -->
+      <div class="premium-card animate-fade-up p-6 sm:p-8" style="animation-delay: 80ms">
+        <div class="mb-6 flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="text-[10px] font-black uppercase tracking-[.2em] text-brandt">Canal de comunicação</p>
+            <h2 class="mt-1 text-lg font-black text-slate-900">Histórico da demanda</h2>
+          </div>
+          <div class="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+            <span class="pulse-ring h-2 w-2 rounded-full bg-emerald-500 text-emerald-400"></span>
+            <span x-text="assigneeName ? `Conversa com ${assigneeName}` : 'Aguardando responsável'"></span>
+          </div>
+        </div>
+
+        <ol class="relative space-y-6">
+          <!-- Evento de criação -->
+          <li class="relative flex gap-4 pl-2">
+            <div class="relative flex flex-col items-center">
+              <span class="z-10 flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 ring-4 ring-white">
+                <svg class="h-4 w-4 text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </span>
+              <span class="mt-1 w-px flex-1 bg-slate-100"></span>
+            </div>
+            <div class="pb-2">
+              <p class="text-sm font-semibold text-slate-900">Chamado aberto via e-mail</p>
+              <p class="text-xs text-slate-400">{{ ticket.created_at.strftime('%d/%m/%Y %H:%M') }} · por {{ ticket.requester.full_name }}</p>
+            </div>
+          </li>
+
+          <!-- Comentários existentes (renderizados no servidor) -->
+          <template x-if="true">
+            <div class="space-y-6">
+              {% for c in ticket.comments %}
+              <div class="relative flex gap-4 pl-2 animate-fade-up" style="animation-delay: {{ loop.index0 * 60 }}ms">
+                <div class="relative flex flex-col items-center">
+                  {% if c.is_system %}
+                  <span class="z-10 flex h-8 w-8 items-center justify-center rounded-full bg-sky-50 ring-4 ring-white">
+                    <svg class="h-4 w-4 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </span>
+                  {% else %}
+                  <span class="z-10 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-brandt to-brandt-light text-xs font-bold text-white ring-4 ring-white">
+                    {{ c.author.full_name[0]|upper }}
+                  </span>
+                  {% endif %}
+                  <span class="mt-1 w-px flex-1 bg-slate-100"></span>
+                </div>
+                <div class="flex-1 pb-2">
+                  {% if c.is_system %}
+                  <p class="text-sm text-slate-500"><span class="font-semibold text-slate-700">{{ c.author.full_name }}</span> · {{ c.content }}</p>
+                  {% else %}
+                  <div class="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+                    <p class="text-sm font-semibold text-slate-900">{{ c.author.full_name }}</p>
+                    <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700">{{ c.content }}</p>
+                  </div>
+                  {% endif %}
+                  {% if c.attachments %}
+                  <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                    {% for attachment in c.attachments %}
+                    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      {% if attachment.content_type in ['image/jpeg','image/png','image/gif','image/webp'] %}
+                      <a href="/api/attachments/{{ attachment.id }}" target="_blank"><img src="/api/attachments/{{ attachment.id }}" alt="Preview de {{ attachment.original_name }}" class="h-48 w-full bg-slate-100 object-contain" loading="lazy"></a>
+                      {% elif attachment.content_type == 'application/pdf' %}
+                      <iframe src="/api/attachments/{{ attachment.id }}#toolbar=0" title="Preview de {{ attachment.original_name }}" class="h-56 w-full bg-slate-100"></iframe>
+                      {% endif %}
+                      <div class="flex items-center justify-between gap-2 p-3">
+                        <p class="min-w-0 truncate text-xs font-bold text-slate-700">{{ attachment.original_name }}</p>
+                        <a href="/api/attachments/{{ attachment.id }}?download=true" class="text-xs font-extrabold text-brandt hover:underline">Baixar</a>
+                      </div>
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+                  <p class="mt-1 text-xs text-slate-400">{{ c.created_at.strftime('%d/%m/%Y %H:%M') }}</p>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </template>
+
+          <!-- Comentários novos adicionados via Alpine (sem reload) -->
+          <template x-for="c in newComments" :key="c.id">
+            <div class="relative flex gap-4 pl-2 animate-fade-up">
+              <div class="relative flex flex-col items-center">
+                <span
+                  class="z-10 flex h-8 w-8 items-center justify-center rounded-full ring-4 ring-white text-xs font-bold text-white"
+                  :class="c.is_system ? 'bg-sky-500' : 'bg-gradient-to-br from-brandt to-brandt-light'"
+                  x-text="c.author_name.charAt(0).toUpperCase()"
+                ></span>
+                <span class="mt-1 w-px flex-1 bg-slate-100"></span>
+              </div>
+              <div class="flex-1 pb-2">
+                <template x-if="c.is_system">
+                  <p class="text-sm text-slate-500"><span class="font-semibold text-slate-700" x-text="c.author_name"></span> · <span x-text="c.content"></span></p>
+                </template>
+                <template x-if="!c.is_system">
+                  <div class="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+                    <p class="text-sm font-semibold text-slate-900" x-text="c.author_name"></p>
+                    <p class="mt-1 whitespace-pre-wrap text-sm text-slate-700" x-text="c.content"></p>
+                  </div>
+                </template>
+                <div class="mt-3 grid gap-3 sm:grid-cols-2" x-show="c.attachments && c.attachments.length">
+                  <template x-for="attachment in c.attachments" :key="attachment.id">
+                    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      <template x-if="attachment.preview_type === 'image'">
+                        <a :href="attachment.url" target="_blank"><img :src="attachment.url" :alt="`Preview de ${attachment.name}`" class="h-48 w-full bg-slate-100 object-contain" loading="lazy"></a>
+                      </template>
+                      <template x-if="attachment.preview_type === 'pdf'">
+                        <iframe :src="`${attachment.url}#toolbar=0`" :title="`Preview de ${attachment.name}`" class="h-56 w-full bg-slate-100"></iframe>
+                      </template>
+                      <div class="flex items-center justify-between gap-2 p-3">
+                        <p class="min-w-0 truncate text-xs font-bold text-slate-700" x-text="attachment.name"></p>
+                        <a :href="`${attachment.url}?download=true`" class="text-xs font-extrabold text-brandt hover:underline">Baixar</a>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+                <p class="mt-1 text-xs text-slate-400" x-text="c.created_at"></p>
+              </div>
+            </div>
+          </template>
+        </ol>
+
+        <div
+          x-show="typingUsers.length"
+          x-transition.opacity
+          class="ml-12 mt-4 flex items-center gap-2 text-xs font-bold text-brandt"
+          aria-live="polite"
+          x-cloak
+        >
+          <span class="flex gap-1" aria-hidden="true">
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-brandt" style="animation-delay:0ms"></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-brandt" style="animation-delay:120ms"></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-brandt" style="animation-delay:240ms"></span>
+          </span>
+          <span x-text="`${typingUsers.join(', ')} ${typingUsers.length > 1 ? 'estão digitando' : 'está digitando'}...`"></span>
+        </div>
+
+        <!-- ==================== NOVO COMENTÁRIO ==================== -->
+        <div class="mt-6 border-t border-slate-100 pt-6">
+          <form @submit.prevent="submitComment()">
+            <textarea
+              x-model="commentText"
+              @input.debounce.600ms="notifyTyping()"
+              rows="3"
+              placeholder="{% if current_user.id == ticket.requester_id %}Escreva uma mensagem para o responsável...{% else %}Escreva uma mensagem para o solicitante...{% endif %}"
+              class="field-premium w-full resize-y p-4 text-sm leading-6"
+            ></textarea>
+            <div class="mt-3">
+              <input x-ref="messageFiles" type="file" multiple class="sr-only" @change="selectedFiles = Array.from($event.target.files)">
+              <button type="button" @click="$refs.messageFiles.click()" class="btn-secondary">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828L18 9.828a4 4 0 10-5.656-5.656L5.758 10.758a6 6 0 108.484 8.484L20.5 13"/></svg>
+                Adicionar anexos
+              </button>
+              <div x-show="selectedFiles.length" class="mt-2 flex flex-wrap gap-2" x-cloak>
+                <template x-for="(file, index) in selectedFiles" :key="`${file.name}-${file.size}`">
+                  <span class="inline-flex max-w-full items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">
+                    <span class="max-w-52 truncate" x-text="file.name"></span>
+                    <button type="button" @click="removeFile(index)" class="text-slate-400 hover:text-red-600" :aria-label="`Remover ${file.name}`">×</button>
+                  </span>
+                </template>
+              </div>
+            </div>
+            <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p class="text-xs font-medium text-slate-400">A mensagem ficará registrada e o destinatário será notificado por e-mail.</p>
+              <button
+                type="submit"
+                :disabled="(!commentText.trim() && !selectedFiles.length) || sending"
+                class="btn-premium shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <svg x-show="sending" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path>
+                </svg>
+                <span x-text="sending ? 'Enviando...' : 'Enviar mensagem'"></span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SIDEBAR DE AÇÕES ==================== -->
+    <div class="space-y-6">
+      {% if current_user.role in ['administrador', 'tecnico'] %}
+      <div class="premium-card animate-fade-up p-6" style="animation-delay: 120ms">
+        <h2 class="mb-4 text-sm font-bold uppercase tracking-widest text-slate-400">Ações</h2>
+
+        <!-- Alterar status -->
+        <label class="mb-1.5 block text-xs font-semibold text-slate-500">Status do chamado</label>
+        <div class="grid grid-cols-1 gap-2">
+          <template x-for="opt in ['Aberto', 'Em Andamento', 'Concluído']" :key="opt">
+            <button
+              @click="changeStatus(opt)"
+              :disabled="updatingStatus"
+              class="flex items-center justify-between rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all duration-300 ease-out"
+              :class="status === opt
+                ? 'border-brandt bg-emerald-50 text-brandt shadow-soft'
+                : 'border-slate-100 bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50'"
+            >
+              <span x-text="opt"></span>
+              <svg x-show="status === opt" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </button>
+          </template>
+        </div>
+
+        <!-- Atribuir técnico -->
+        <label class="mb-1.5 mt-6 block text-xs font-semibold text-slate-500">Técnico responsável</label>
+        <select
+          x-model="assigneeId"
+          @change="changeAssignee()"
+          class="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-all duration-300 focus:border-brandt focus:outline-none focus:ring-2 focus:ring-brandt/20"
+        >
+          <option value="">— Não atribuído —</option>
+          {% for tech in technicians %}
+          <option value="{{ tech.id }}">{{ tech.full_name }}</option>
+          {% endfor %}
+        </select>
+
+        <!-- Toast de feedback -->
+        <div
+          x-show="toast"
+          x-transition:enter="transition ease-out duration-300"
+          x-transition:enter-start="opacity-0 translate-y-2"
+          x-transition:enter-end="opacity-100 translate-y-0"
+          x-transition:leave="transition ease-in duration-200"
+          x-transition:leave-start="opacity-100"
+          x-transition:leave-end="opacity-0"
+          class="mt-4 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm font-medium text-brandt"
+          x-text="toast"
+          style="display: none"
+        ></div>
+      </div>
+      {% endif %}
+
+      <!-- Metadados -->
+      <div class="premium-card animate-fade-up p-6" style="animation-delay: 160ms">
+        <h2 class="mb-4 text-sm font-bold uppercase tracking-widest text-slate-400">Detalhes</h2>
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between"><dt class="text-slate-500">Solicitante</dt><dd class="font-semibold text-slate-800">{{ ticket.requester.full_name }}</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Departamento</dt><dd class="font-semibold text-slate-800">{{ ticket.requester.department or '—' }}</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Prioridade</dt><dd class="font-semibold text-slate-800">{{ ticket.priority.value }}</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Criado em</dt><dd class="font-semibold text-slate-800">{{ ticket.created_at.strftime('%d/%m/%Y %H:%M') }}</dd></div>
+        </dl>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function ticketDetail(cfg) {
+    return {
+      ticketId: cfg.ticketId,
+      status: cfg.status,
+      assigneeId: cfg.assigneeId,
+      assigneeName: cfg.assigneeName,
+      knownCommentIds: new Set(cfg.commentIds || []),
+      commentText: '',
+      selectedFiles: [],
+      newComments: [],
+      sending: false,
+      updatingStatus: false,
+      toast: '',
+      syncState: 'online',
+      pollTimer: null,
+      typingUsers: [],
+      lastTypingSignal: 0,
+
+      init() {
+        this.pollTimer = setInterval(() => {
+          if (!document.hidden) this.refreshState();
+        }, 1500);
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) this.refreshState();
+        });
+      },
+
+      async refreshState() {
+        this.syncState = 'syncing';
+        try {
+          const res = await fetch(`/api/tickets/${this.ticketId}/state`, {
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store',
+          });
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          this.status = data.status;
+          this.assigneeId = data.assignee_id;
+          this.assigneeName = data.assignee_name;
+          this.typingUsers = data.typing_users || [];
+          for (const comment of data.comments) {
+            if (!this.knownCommentIds.has(comment.id)) {
+              this.knownCommentIds.add(comment.id);
+              this.newComments.push(comment);
+            }
+          }
+          this.syncState = 'online';
+        } catch (e) {
+          this.syncState = 'offline';
+        }
+      },
+
+      showToast(msg) {
+        this.toast = msg;
+        setTimeout(() => { this.toast = ''; }, 2600);
+      },
+
+      async notifyTyping(active = true) {
+        const now = Date.now();
+        if (active && now - this.lastTypingSignal < 1800) return;
+        this.lastTypingSignal = now;
+        try {
+          await fetch(`/api/tickets/${this.ticketId}/typing`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ typing: active }),
+          });
+        } catch (e) {
+          // Indicador efêmero: falhas não interrompem a conversa.
+        }
+      },
+
+      removeFile(index) {
+        this.selectedFiles.splice(index, 1);
+        if (!this.selectedFiles.length && this.$refs.messageFiles) {
+          this.$refs.messageFiles.value = '';
+        }
+      },
+
+      async submitComment() {
+        if (!this.commentText.trim() && !this.selectedFiles.length) return;
+        this.sending = true;
+        try {
+          const formData = new FormData();
+          formData.append('content', this.commentText);
+          for (const file of this.selectedFiles) {
+            formData.append('attachments', file);
+          }
+          const res = await fetch(`/api/tickets/${this.ticketId}/messages`, {
+            method: 'POST',
+            body: formData,
+          });
+          if (!res.ok) throw new Error('Falha ao comentar');
+          const data = await res.json();
+          await this.notifyTyping(false);
+          this.knownCommentIds.add(data.id);
+          this.newComments.push(data);
+          this.commentText = '';
+          this.selectedFiles = [];
+          if (this.$refs.messageFiles) this.$refs.messageFiles.value = '';
+        } catch (e) {
+          this.showToast('Erro ao enviar comentário.');
+        } finally {
+          this.sending = false;
+        }
+      },
+
+      async changeStatus(newStatus) {
+        if (newStatus === this.status) return;
+        this.updatingStatus = true;
+        try {
+          const res = await fetch(`/api/tickets/${this.ticketId}/status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus }),
+          });
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          this.status = newStatus;
+          this.knownCommentIds.add(data.id);
+          this.newComments.push(data);
+          this.showToast(`Status atualizado para "${newStatus}".`);
+        } catch (e) {
+          this.showToast('Erro ao alterar status.');
+        } finally {
+          this.updatingStatus = false;
+        }
+      },
+
+      async changeAssignee() {
+        const id = this.assigneeId ? parseInt(this.assigneeId) : null;
+        try {
+          const res = await fetch(`/api/tickets/${this.ticketId}/assignee`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ assignee_id: id }),
+          });
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          this.knownCommentIds.add(data.id);
+          this.newComments.push(data);
+          await this.refreshState();
+          this.showToast('Responsável atualizado.');
+        } catch (e) {
+          this.showToast('Erro ao atribuir técnico.');
+        }
+      },
+    };
+  }
+</script>
+{% endblock %}

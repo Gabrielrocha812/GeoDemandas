@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#008542">
+  <title>{% block title %}GeoDemandas Brandt{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { brandt: { DEFAULT: '#008542', light: '#16b364', dark: '#005f31' } },
+        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+      }}
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script defer src="/static/js/app.js"></script>
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="font-sans antialiased">
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-3 focus:font-bold focus:text-brandt focus:shadow-xl">Ir para o conteúdo</a>
+  <div class="ambient-orb one" aria-hidden="true"></div>
+  <div class="ambient-orb two" aria-hidden="true"></div>
+
+{% block layout %}
+  <div
+    x-data="{
+      sidebarOpen: false,
+      sidebarCollapsed: localStorage.getItem('geoSidebarCollapsed') === '1',
+      toggleSidebar() {
+        this.sidebarCollapsed = !this.sidebarCollapsed;
+        localStorage.setItem('geoSidebarCollapsed', this.sidebarCollapsed ? '1' : '0');
+      }
+    }"
+    class="flex min-h-screen"
+  >
+    <aside
+      class="glass fixed inset-y-0 left-0 z-50 w-[290px] -translate-x-full border-y-0 border-l-0 transition-[width,transform] duration-300 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0"
+      :class="[
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+        sidebarCollapsed ? 'lg:w-[92px]' : 'lg:w-[290px]'
+      ]"
+      aria-label="Navegação principal"
+    >
+      <button
+        type="button"
+        @click="toggleSidebar()"
+        class="absolute -right-4 top-8 z-10 hidden h-9 w-9 items-center justify-center rounded-full border border-emerald-100 bg-white text-brandt shadow-lg transition hover:scale-110 hover:bg-emerald-50 lg:flex"
+        :aria-label="sidebarCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'"
+        :title="sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'"
+      >
+        <svg class="h-4 w-4 transition-transform duration-300" :class="sidebarCollapsed ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </button>
+      <div class="flex h-full flex-col p-4">
+        <a href="/" class="group flex items-center gap-3 rounded-2xl px-3 py-4" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+          <div class="brand-mark shine flex h-12 w-12 items-center justify-center rounded-2xl text-white transition-transform duration-300 group-hover:rotate-3 group-hover:scale-105">
+            <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 21s-6-5.686-6-10a6 6 0 1112 0c0 4.314-6 10-6 10z"/>
+              <circle cx="12" cy="11" r="2"/>
+            </svg>
+          </div>
+          <div :class="sidebarCollapsed ? 'lg:hidden' : ''">
+            <p class="text-base font-black tracking-tight text-slate-950">GeoDemandas</p>
+            <p class="text-[10px] font-extrabold uppercase tracking-[.24em] text-brandt">Intelligence Hub</p>
+          </div>
+        </a>
+
+        <div class="my-3 h-px bg-gradient-to-r from-transparent via-emerald-200/70 to-transparent"></div>
+        <p class="px-4 pb-2 pt-2 text-[10px] font-black uppercase tracking-[.22em] text-slate-400" :class="sidebarCollapsed ? 'lg:hidden' : ''">Workspace</p>
+        <nav class="space-y-1.5">
+          <a href="/" title="Visão geral" class="nav-link {% if request.url.path == '/' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13h8V3H3v10zm0 8h8v-5H3v5zm11 0h7V11h-7v10zm0-18v5h7V3h-7z"/></svg>
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Visão geral</span>
+          </a>
+          <a href="/demandas/nova" title="Cadastrar demanda" class="nav-link {% if request.url.path == '/demandas/nova' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m7-7H5"/></svg>
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Cadastrar demanda</span>
+          </a>
+          <a href="/minhas-demandas" title="Minhas demandas" class="nav-link {% if request.url.path == '/minhas-demandas' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M7 3h8l4 4v14H5V3h2zm8 0v5h5"/></svg>
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Minhas demandas</span>
+          </a>
+          {% if current_user and current_user.role == 'administrador' %}
+          <a href="/admin/usuarios" title="Usuários e acessos" class="nav-link {% if request.url.path.startswith('/admin/usuarios') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8zm13 10v-2a4 4 0 00-3-3.87m-1-8a4 4 0 010 7.75"/></svg>
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Usuários e acessos</span>
+          </a>
+          {% endif %}
+        </nav>
+
+        <div class="mt-8 px-2" :class="sidebarCollapsed ? 'lg:hidden' : ''">
+          <div class="premium-card p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] font-black uppercase tracking-[.18em] text-slate-400">Entrada automática</span>
+              <span class="pulse-ring h-2.5 w-2.5 rounded-full bg-emerald-500 text-emerald-400"></span>
+            </div>
+            <p class="mt-3 text-xs font-bold text-slate-700">Caixa monitorada</p>
+            <p class="mt-1 break-all text-[11px] font-semibold text-brandt">geodemandas@brandt.com.br</p>
+            <div class="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50/80 px-3 py-2 text-[11px] font-bold text-emerald-700">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+              Serviço operacional
+            </div>
+          </div>
+        </div>
+
+        {% if current_user %}
+        <div class="mt-auto pt-4">
+          <div class="premium-card p-3" :class="sidebarCollapsed ? 'lg:p-2' : ''">
+            <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'lg:flex-col lg:gap-2' : ''">
+              <div class="brand-mark flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white">{{ current_user.full_name[0]|upper }}</div>
+              <div class="min-w-0 flex-1" :class="sidebarCollapsed ? 'lg:hidden' : ''">
+                <p class="truncate text-sm font-extrabold text-slate-900">{{ current_user.full_name }}</p>
+                <p class="truncate text-[11px] font-semibold text-slate-500">{{ {'administrador':'Administrador','tecnico':'Técnico','solicitante':'Solicitante'}.get(current_user.role, 'Solicitante') }}</p>
+              </div>
+              <a href="/logout" class="flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600" aria-label="Sair">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </aside>
+
+    <div x-show="sidebarOpen" x-transition.opacity @click="sidebarOpen=false" class="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-sm lg:hidden" x-cloak></div>
+
+    <div class="min-w-0 flex-1">
+      <header class="glass sticky top-0 z-30 flex h-16 items-center justify-between border-x-0 border-t-0 px-4 lg:hidden">
+        <button @click="sidebarOpen=true" class="flex h-11 w-11 items-center justify-center rounded-xl text-slate-700 hover:bg-emerald-50" aria-label="Abrir menu">
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <span class="font-black tracking-tight text-slate-900">GeoDemandas</span>
+        <div class="h-11 w-11"></div>
+      </header>
+      <main id="main-content" class="page-enter mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-7 lg:px-10 lg:py-9" tabindex="-1">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+{% endblock %}
+</body>
+</html>

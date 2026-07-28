@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Página não encontrada · GeoDemandas{% endblock %}
+{% block content %}
+<div class="flex min-h-[70vh] items-center justify-center">
+  <section class="premium-card reveal relative w-full max-w-2xl overflow-hidden px-6 py-16 text-center sm:px-12">
+    <div class="absolute left-1/2 top-0 h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-200/35 blur-3xl"></div>
+    <div class="brand-mark float-soft relative mx-auto flex h-24 w-24 items-center justify-center rounded-[2rem] text-white">
+      <svg class="h-11 w-11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    </div>
+    <p class="mt-8 text-xs font-black uppercase tracking-[.25em] text-brandt">Erro 404</p>
+    <h1 class="mt-3 text-3xl font-black tracking-[-.04em] text-slate-950">{{ title or 'Chamado não encontrado' }}</h1>
+    <p class="mx-auto mt-3 max-w-md text-sm font-medium leading-6 text-slate-500">{{ message or 'A demanda que você procura não existe ou não está disponível para o seu perfil.' }}</p>
+    <a href="/" class="btn-premium shine mt-8"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>Voltar à visão geral</a>
+  </section>
+</div>
+{% endblock %}

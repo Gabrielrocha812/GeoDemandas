@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Acesso seguro · GeoDemandas{% endblock %}
+{% block layout %}
+<main class="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
+  <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(22,179,100,.10),transparent_45%)]" aria-hidden="true"></div>
+  <div class="pointer-events-none absolute left-[8%] top-[14%] h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_25px_8px_rgba(22,179,100,.25)] float-soft"></div>
+  <div class="pointer-events-none absolute bottom-[18%] right-[10%] h-2 w-2 rounded-full bg-brandt shadow-[0_0_22px_7px_rgba(0,133,66,.22)] float-soft"></div>
+
+  <section x-data="{ showPassword:false }" class="page-enter relative z-10 grid w-full max-w-5xl overflow-hidden rounded-[2rem] border border-white/80 bg-white/78 shadow-[0_40px_120px_rgba(0,71,38,.18)] backdrop-blur-2xl lg:grid-cols-[1.1fr_.9fr]">
+    <div class="relative hidden min-h-[620px] overflow-hidden bg-gradient-to-br from-[#003d22] via-[#006f39] to-[#16a85e] p-12 text-white lg:flex lg:flex-col lg:justify-between">
+      <div class="absolute -right-28 -top-28 h-80 w-80 rounded-full border border-white/10"></div>
+      <div class="absolute -right-16 -top-16 h-56 w-56 rounded-full border border-white/10"></div>
+      <div class="absolute bottom-10 left-10 h-40 w-40 rounded-full bg-emerald-300/15 blur-3xl"></div>
+      <div class="relative">
+        <div class="flex items-center gap-3">
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/15 shadow-xl backdrop-blur">
+            <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s-6-5.686-6-10a6 6 0 1112 0c0 4.314-6 10-6 10z"/><circle cx="12" cy="11" r="2"/></svg>
+          </div>
+          <div><p class="text-lg font-black">GeoDemandas</p><p class="text-[10px] font-bold uppercase tracking-[.24em] text-emerald-100">Brandt Intelligence</p></div>
+        </div>
+      </div>
+      <div class="relative">
+        <p class="text-xs font-extrabold uppercase tracking-[.24em] text-emerald-200">Gestão sem atrito</p>
+        <h1 class="mt-5 text-4xl font-black leading-[1.08] tracking-[-.045em]">Demandas claras.<br>Decisões mais rápidas.</h1>
+        <p class="mt-5 max-w-md text-sm font-medium leading-7 text-emerald-50/80">Uma experiência inteligente para conectar pessoas, prioridades e resultados em um único fluxo.</p>
+      </div>
+      <div class="relative flex items-center gap-3 text-xs font-bold text-emerald-100/80"><span class="pulse-ring h-2 w-2 rounded-full bg-emerald-300 text-emerald-300"></span>Active Directory conectado e protegido</div>
+    </div>
+
+    <div class="flex min-h-[620px] items-center p-7 sm:p-12">
+      <div class="mx-auto w-full max-w-sm">
+        <div class="mb-9 lg:hidden"><div class="brand-mark mx-auto flex h-14 w-14 items-center justify-center rounded-2xl text-white"><svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s-6-5.686-6-10a6 6 0 1112 0c0 4.314-6 10-6 10z"/><circle cx="12" cy="11" r="2"/></svg></div></div>
+        <p class="text-xs font-black uppercase tracking-[.2em] text-brandt">Bem-vindo de volta</p>
+        <h2 class="mt-3 text-3xl font-black tracking-[-.04em] text-slate-950">Acesse seu workspace</h2>
+        <p class="mt-2 text-sm font-medium leading-6 text-slate-500">Use as mesmas credenciais do seu computador corporativo.</p>
+
+        {% if error %}
+        <div role="alert" class="mt-6 flex gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          <svg class="mt-0.5 h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zM12 15.75h.007v.008H12v-.008z"/></svg>
+          <div><p class="font-extrabold">Não foi possível entrar</p><p class="mt-1 text-xs font-medium text-red-600">{{ error }}</p></div>
+        </div>
+        {% endif %}
+
+        <form method="post" action="/login" class="mt-8 space-y-5" data-loading-form>
+          <div>
+            <label for="username" class="mb-2 block text-xs font-extrabold uppercase tracking-wider text-slate-600">Usuário de rede</label>
+            <div class="relative"><svg class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a3 3 0 11-6 0 3 3 0 016 0zM5 21a7 7 0 0114 0"/></svg><input id="username" type="text" name="email" required autofocus autocomplete="username" placeholder="nome.sobrenome" class="field-premium pl-12"></div>
+          </div>
+          <div>
+            <label for="password" class="mb-2 block text-xs font-extrabold uppercase tracking-wider text-slate-600">Senha</label>
+            <div class="relative"><svg class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="11" rx="2"/><path stroke-linecap="round" d="M8 10V7a4 4 0 118 0v3"/></svg><input id="password" :type="showPassword ? 'text' : 'password'" name="password" required autocomplete="current-password" placeholder="••••••••" class="field-premium px-12"><button type="button" @click="showPassword=!showPassword" class="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-50 hover:text-brandt" :aria-label="showPassword ? 'Ocultar senha' : 'Mostrar senha'"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.46 12C3.73 7.94 7.52 5 12 5c4.48 0 8.27 2.94 9.54 7-1.27 4.06-5.06 7-9.54 7-4.48 0-8.27-2.94-9.54-7z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+          </div>
+          <button type="submit" data-loading-text="Autenticando..." class="btn-premium shine w-full py-3.5"><span data-button-label>Entrar</span><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg></button>
+        </form>
+        <div class="mt-7 flex items-center justify-center gap-2 text-[11px] font-semibold text-slate-400"><svg class="h-4 w-4 text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>Sessão protegida e autenticada no domínio Brandt</div>
+      </div>
+    </div>
+  </section>
+</main>
+{% endblock %}
