@@ -55,7 +55,7 @@ def send_ticket_update(
         recipient_name,
         ticket_id,
         subject,
-        "Sua demanda foi atualizada",
+        "A demanda foi atualizada",
         html.escape(update_text),
         "Atualizada",
     )

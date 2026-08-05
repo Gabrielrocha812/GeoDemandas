@@ -1,0 +1,532 @@
+{% extends "base.html" %}
+{% block title %}Operações e confiabilidade · GeoDemandas{% endblock %}
+
+{% set delivery_status_styles = {
+  'pending': 'bg-amber-50 text-amber-800 ring-amber-200',
+  'queued': 'bg-amber-50 text-amber-800 ring-amber-200',
+  'processing': 'bg-sky-50 text-sky-800 ring-sky-200',
+  'retry': 'bg-orange-50 text-orange-800 ring-orange-200',
+  'sent': 'bg-emerald-50 text-emerald-800 ring-emerald-200',
+  'failed': 'bg-red-50 text-red-800 ring-red-200',
+  'dead_letter': 'bg-red-100 text-red-900 ring-red-300'
+} %}
+{% set delivery_status_labels = {
+  'pending': 'Pendente',
+  'queued': 'Na fila',
+  'processing': 'Processando',
+  'retry': 'Nova tentativa',
+  'sent': 'Enviado',
+  'failed': 'Falhou',
+  'dead_letter': 'Intervenção necessária'
+} %}
+{% set event_labels = {
+  'ticket_received': 'Demanda recebida',
+  'ticket_update': 'Demanda atualizada',
+  'ticket_completed': 'Demanda concluída',
+  'sla_warning': 'Alerta de SLA',
+  'sla_overdue': 'SLA vencido'
+} %}
+
+{% block content %}
+{% set chart_totals = namespace(sent=0, failed=0, maximum=1) %}
+{% for point in daily_series %}
+  {% set chart_totals.sent = chart_totals.sent + point.sent %}
+  {% set chart_totals.failed = chart_totals.failed + point.failed %}
+  {% if point.sent > chart_totals.maximum %}{% set chart_totals.maximum = point.sent %}{% endif %}
+  {% if point.failed > chart_totals.maximum %}{% set chart_totals.maximum = point.failed %}{% endif %}
+{% endfor %}
+{% set series_count = daily_series|length %}
+{% set chart_slot = 620 / ([series_count, 1]|max) %}
+{% set chart_bar_width = [22, (chart_slot / 2) - 5]|min %}
+
+<div class="space-y-7">
+  <header class="reveal flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+    <div>
+      <div class="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-white/70 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.2em] text-brandt shadow-sm">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12M7.76 16.24l-2.12 2.12"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        Saúde operacional
+      </div>
+      <h1 class="text-3xl font-black tracking-[-.035em] text-slate-950 sm:text-4xl">Operações e confiabilidade</h1>
+      <p class="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">
+        Acompanhe entregas de notificações, riscos de SLA e eventos administrativos em uma visão única.
+        Os prazos atuais são calculados em horas corridas.
+      </p>
+    </div>
+    <div class="glass flex min-h-[52px] items-center gap-3 rounded-2xl px-4 py-3">
+      <div class="brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.62-4.1A11.95 11.95 0 0112 3c-2.4 0-4.64.7-6.52 1.9A12 12 0 003 10.5c0 5.25 3.84 9.61 9 10.5 5.16-.89 9-5.25 9-10.5 0-1.64-.33-3.2-.92-4.62z"/>
+        </svg>
+      </div>
+      <div>
+        <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Acesso administrativo</p>
+        <p class="mt-0.5 text-xs font-extrabold text-slate-800">{{ current_user.full_name }}</p>
+      </div>
+    </div>
+  </header>
+
+  {% if request.query_params.get('repetida') %}
+  <div class="reveal flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900" role="status">
+    <svg class="mt-0.5 h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+    </svg>
+    A notificação foi reenfileirada e será processada pelo worker.
+  </div>
+  {% endif %}
+
+  <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6" aria-labelledby="operations-metrics-title">
+    <h2 id="operations-metrics-title" class="sr-only">Indicadores operacionais</h2>
+    {% set metric_cards = [
+      ('Pendentes', metrics.pending, 'Aguardando envio', 'text-amber-700', 'bg-amber-50', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'),
+      ('Enviadas em 24 h', metrics.sent_24h, 'Entregas confirmadas', 'text-emerald-700', 'bg-emerald-50', 'M5 13l4 4L19 7'),
+      ('Falhas', metrics.failed, 'Exigem verificação', 'text-red-700', 'bg-red-50', 'M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 4.5h.01'),
+      ('SLA em risco', metrics.sla_risk, 'Prazo se aproximando', 'text-orange-700', 'bg-orange-50', 'M12 6v6l4 2'),
+      ('SLA vencido', metrics.sla_overdue, 'Prazo ultrapassado', 'text-red-800', 'bg-red-100', 'M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4m0 4h.01'),
+      ('Sem responsável', metrics.unassigned, 'Demandas não atribuídas', 'text-violet-700', 'bg-violet-50', 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8zm11 10v-2a4 4 0 00-3-3.87')
+    ] %}
+    {% for label, value, helper, color, surface, icon in metric_cards %}
+    <article class="premium-card reveal p-5" style="--delay:{{ loop.index0 * 55 + 60 }}ms">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-xs font-extrabold uppercase tracking-[.1em] text-slate-500">{{ label }}</p>
+          <p class="mt-3 font-mono text-3xl font-black tracking-[-.04em] {{ color }}">{{ value }}</p>
+        </div>
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl {{ surface }} {{ color }}">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="{{ icon }}"/>
+          </svg>
+        </div>
+      </div>
+      <p class="mt-3 text-xs font-semibold leading-5 text-slate-500">{{ helper }}</p>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="premium-card reveal overflow-hidden" style="--delay:390ms" aria-labelledby="delivery-trend-title">
+    <div class="border-b border-slate-100 px-5 py-5 sm:px-6">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 id="delivery-trend-title" class="text-lg font-black text-slate-900">Entregas por período</h2>
+          <p class="mt-1 text-sm font-medium text-slate-500">Comparativo entre notificações entregues e falhas registradas.</p>
+        </div>
+        <div class="flex flex-wrap gap-3 text-xs font-extrabold text-slate-600" aria-label="Legenda do gráfico">
+          <span class="inline-flex min-h-[32px] items-center gap-2">
+            <span class="h-3 w-3 rounded-sm bg-brandt" aria-hidden="true"></span>
+            Enviadas
+          </span>
+          <span class="inline-flex min-h-[32px] items-center gap-2">
+            <span class="h-3 w-3 rounded-sm border border-red-700 bg-red-100" aria-hidden="true"></span>
+            Falhas
+          </span>
+        </div>
+      </div>
+    </div>
+
+    {% if daily_series %}
+    <figure class="p-4 sm:p-6">
+      <svg class="h-auto w-full" viewBox="0 0 700 240" role="img" aria-labelledby="delivery-chart-title delivery-chart-description" preserveAspectRatio="xMidYMid meet">
+        <title id="delivery-chart-title">Notificações enviadas e falhas por período</title>
+        <desc id="delivery-chart-description">
+          Em {{ series_count }} períodos, houve {{ chart_totals.sent }} notificações enviadas e {{ chart_totals.failed }} falhas.
+        </desc>
+        <defs>
+          <pattern id="failed-bar-pattern" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="#fee2e2"></rect>
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#b91c1c" stroke-width="2"></line>
+          </pattern>
+        </defs>
+
+        <line x1="52" y1="184" x2="680" y2="184" stroke="#cbd5e1" stroke-width="1.5"/>
+        <line x1="52" y1="114" x2="680" y2="114" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4 5"/>
+        <line x1="52" y1="44" x2="680" y2="44" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4 5"/>
+        <text x="44" y="188" text-anchor="end" font-size="10" fill="#64748b">0</text>
+        <text x="44" y="118" text-anchor="end" font-size="10" fill="#64748b">{{ (chart_totals.maximum / 2)|round(0, 'ceil')|int }}</text>
+        <text x="44" y="48" text-anchor="end" font-size="10" fill="#64748b">{{ chart_totals.maximum }}</text>
+
+        {% for point in daily_series %}
+        {% set group_x = 58 + (loop.index0 * chart_slot) %}
+        {% set sent_height = (point.sent / chart_totals.maximum) * 140 %}
+        {% set failed_height = (point.failed / chart_totals.maximum) * 140 %}
+        <g aria-label="{{ point.label }}: {{ point.sent }} enviadas e {{ point.failed }} falhas">
+          <rect
+            x="{{ group_x }}"
+            y="{{ 184 - sent_height }}"
+            width="{{ chart_bar_width }}"
+            height="{{ sent_height }}"
+            rx="3"
+            fill="#008542"
+          >
+            <title>{{ point.label }}: {{ point.sent }} enviadas</title>
+          </rect>
+          <rect
+            x="{{ group_x + chart_bar_width + 4 }}"
+            y="{{ 184 - failed_height }}"
+            width="{{ chart_bar_width }}"
+            height="{{ failed_height }}"
+            rx="3"
+            fill="url(#failed-bar-pattern)"
+            stroke="#b91c1c"
+            stroke-width="1"
+          >
+            <title>{{ point.label }}: {{ point.failed }} falhas</title>
+          </rect>
+          <text
+            x="{{ group_x + chart_bar_width + 2 }}"
+            y="207"
+            text-anchor="middle"
+            font-size="9"
+            font-weight="700"
+            fill="#64748b"
+          >{{ point.label }}</text>
+        </g>
+        {% endfor %}
+      </svg>
+      <figcaption class="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-600">
+        Resumo: nos {{ series_count }} períodos exibidos, {{ chart_totals.sent }} notificações foram enviadas e {{ chart_totals.failed }} falharam.
+        {% if chart_totals.failed > 0 %}As falhas estão detalhadas na fila de entregas abaixo.{% else %}Não houve falhas no período.{% endif %}
+      </figcaption>
+
+      <table class="sr-only">
+        <caption>Dados completos do gráfico de entregas</caption>
+        <thead><tr><th scope="col">Período</th><th scope="col">Enviadas</th><th scope="col">Falhas</th></tr></thead>
+        <tbody>
+          {% for point in daily_series %}
+          <tr><th scope="row">{{ point.label }}</th><td>{{ point.sent }}</td><td>{{ point.failed }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </figure>
+    {% else %}
+    <div class="flex flex-col items-center px-6 py-14 text-center">
+      <div class="flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-100 text-slate-500">
+        <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 19V9m6 10V5m6 14v-7m4 7H2"/>
+        </svg>
+      </div>
+      <h3 class="mt-5 text-lg font-black text-slate-900">Ainda não há dados de entrega</h3>
+      <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">O comparativo será exibido quando as primeiras notificações forem processadas.</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="premium-card reveal p-4 sm:p-6" aria-labelledby="operations-filters-title">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h2 id="operations-filters-title" class="text-base font-black text-slate-900">Filtrar entregas</h2>
+        <p class="mt-1 text-xs font-medium leading-5 text-slate-500">Pesquise por destinatário, demanda ou erro e combine com os filtros operacionais.</p>
+      </div>
+      <p class="text-sm font-extrabold text-slate-700" aria-live="polite">
+        {{ total_items }} entrega{% if total_items != 1 %}s{% endif %}
+      </p>
+    </div>
+
+    <form method="get" action="{{ request.url.path }}" class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-12" role="search" aria-labelledby="operations-filters-title">
+      <div class="md:col-span-2 xl:col-span-6">
+        <label for="operations-search" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Buscar</label>
+        <div class="relative">
+          <svg class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M20 20l-4-4"/>
+          </svg>
+          <input
+            id="operations-search"
+            name="q"
+            type="search"
+            value="{{ search_query or '' }}"
+            placeholder="Destinatário, demanda ou mensagem de erro"
+            autocomplete="off"
+            class="field-premium min-h-[44px] pl-12 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100"
+          >
+        </div>
+      </div>
+      <div class="xl:col-span-3">
+        <label for="operations-status" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Status</label>
+        <select id="operations-status" name="status" class="field-premium min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100">
+          <option value="">Todos os status</option>
+          {% for option in status_options %}
+          {% set option_value = option.value|default(option) %}
+          {% set option_label = option.label|default(delivery_status_labels.get(option_value, option_value|replace('_', ' ')|title)) %}
+          <option value="{{ option_value }}" {% if active_status == option_value %}selected{% endif %}>{{ option_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="xl:col-span-3">
+        <label for="operations-event" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Tipo de evento</label>
+        <select id="operations-event" name="event" class="field-premium min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100">
+          <option value="">Todos os eventos</option>
+          {% for option in event_options %}
+          {% set option_value = option.value|default(option) %}
+          {% set option_label = option.label|default(event_labels.get(option_value, option_value|replace('_', ' ')|title)) %}
+          <option value="{{ option_value }}" {% if active_event == option_value %}selected{% endif %}>{{ option_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex flex-col gap-2 md:col-span-2 md:flex-row md:justify-end xl:col-span-12">
+        <a href="{{ request.url.path }}" class="btn-secondary min-h-[44px] w-full focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200 md:w-auto">Limpar filtros</a>
+        <button type="submit" class="btn-premium min-h-[44px] w-full focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-200 md:w-auto">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16M7 12h10m-6 7h2"/>
+          </svg>
+          Aplicar filtros
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="space-y-3" aria-labelledby="deliveries-title">
+    <div class="flex items-end justify-between gap-4 px-1">
+      <div>
+        <h2 id="deliveries-title" class="text-xl font-black text-slate-900">Fila de entregas</h2>
+        <p class="mt-1 text-sm font-medium text-slate-500">Histórico e tentativas das notificações processadas.</p>
+      </div>
+    </div>
+
+    {% if deliveries %}
+    <div class="premium-card hidden overflow-hidden lg:block">
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-left">
+          <caption class="sr-only">Fila de entregas de notificações</caption>
+          <thead class="border-b border-slate-200 bg-slate-50/90">
+            <tr>
+              <th scope="col" class="px-5 py-4 text-xs font-black uppercase tracking-[.1em] text-slate-500">Entrega</th>
+              <th scope="col" class="px-5 py-4 text-xs font-black uppercase tracking-[.1em] text-slate-500">Evento e demanda</th>
+              <th scope="col" class="px-5 py-4 text-xs font-black uppercase tracking-[.1em] text-slate-500">Destinatário</th>
+              <th scope="col" class="px-5 py-4 text-xs font-black uppercase tracking-[.1em] text-slate-500">Status</th>
+              <th scope="col" class="px-5 py-4 text-xs font-black uppercase tracking-[.1em] text-slate-500">Tentativas</th>
+              <th scope="col" class="px-5 py-4 text-xs font-black uppercase tracking-[.1em] text-slate-500">Agenda</th>
+              <th scope="col" class="px-5 py-4 text-xs font-black uppercase tracking-[.1em] text-slate-500">Detalhes</th>
+              <th scope="col" class="px-5 py-4 text-xs font-black uppercase tracking-[.1em] text-slate-500">Ação</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for delivery in deliveries %}
+            <tr class="align-top transition-colors duration-200 hover:bg-emerald-50/35">
+              <td class="px-5 py-5">
+                <p class="font-mono text-xs font-black text-slate-700">#{{ delivery.id }}</p>
+                <p class="mt-1 whitespace-nowrap text-[11px] font-semibold text-slate-500">{{ delivery.created_at|local_datetime('%d/%m/%Y · %H:%M') }}</p>
+              </td>
+              <td class="px-5 py-5">
+                <p class="text-sm font-extrabold text-slate-800">{{ event_labels.get(delivery.event_type, delivery.event_type|replace('_', ' ')|title) }}</p>
+                {% if delivery.ticket_id %}
+                <a href="/tickets/{{ delivery.ticket_id }}" class="mt-1 inline-flex min-h-[44px] items-center text-xs font-black text-brandt underline-offset-4 hover:underline focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100">
+                  Demanda #{{ '%04d'|format(delivery.ticket_id) }}
+                </a>
+                {% else %}
+                <p class="mt-2 text-xs font-semibold text-slate-400">Sem demanda vinculada</p>
+                {% endif %}
+              </td>
+              <td class="max-w-[230px] px-5 py-5">
+                <p class="break-all text-sm font-semibold leading-5 text-slate-700">{{ delivery.recipient }}</p>
+              </td>
+              <td class="px-5 py-5">
+                <span class="inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-xs font-extrabold ring-1 ring-inset {{ delivery_status_styles.get(delivery.status, 'bg-slate-100 text-slate-700 ring-slate-200') }}">
+                  <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true"></span>
+                  {{ delivery_status_labels.get(delivery.status, delivery.status|replace('_', ' ')|title) }}
+                </span>
+              </td>
+              <td class="px-5 py-5">
+                <span class="font-mono text-sm font-black text-slate-800">{{ delivery.attempts }}</span>
+              </td>
+              <td class="px-5 py-5">
+                {% if delivery.sent_at %}
+                <p class="text-xs font-extrabold text-emerald-800">Enviada em</p>
+                <p class="mt-1 whitespace-nowrap text-xs font-semibold text-slate-600">{{ delivery.sent_at|local_datetime('%d/%m/%Y · %H:%M') }}</p>
+                {% elif delivery.next_attempt_at %}
+                <p class="text-xs font-extrabold text-orange-800">Próxima tentativa</p>
+                <p class="mt-1 whitespace-nowrap text-xs font-semibold text-slate-600">{{ delivery.next_attempt_at|local_datetime('%d/%m/%Y · %H:%M') }}</p>
+                {% else %}
+                <p class="text-xs font-semibold text-slate-400">Sem agendamento</p>
+                {% endif %}
+              </td>
+              <td class="max-w-xs px-5 py-5">
+                {% if delivery.last_error %}
+                <p class="break-words text-xs font-semibold leading-5 text-red-800">{{ delivery.last_error }}</p>
+                {% else %}
+                <p class="text-xs font-semibold text-slate-400">Nenhum erro registrado</p>
+                {% endif %}
+              </td>
+              <td class="px-5 py-5">
+                {% if delivery.status == 'failed' %}
+                <form method="post" action="/admin/operacao/notificacoes/{{ delivery.id }}/repetir">
+                  <button type="submit" class="btn-secondary min-h-[44px] whitespace-nowrap focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100">
+                    Tentar novamente
+                  </button>
+                </form>
+                {% else %}
+                <span class="text-xs font-semibold text-slate-400">Sem ação</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="space-y-3 lg:hidden">
+      {% for delivery in deliveries %}
+      <article class="premium-card p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p class="font-mono text-xs font-black tracking-wide text-slate-500">Entrega #{{ delivery.id }}</p>
+            <h3 class="mt-1 text-base font-black text-slate-900">{{ event_labels.get(delivery.event_type, delivery.event_type|replace('_', ' ')|title) }}</h3>
+          </div>
+          <span class="inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-xs font-extrabold ring-1 ring-inset {{ delivery_status_styles.get(delivery.status, 'bg-slate-100 text-slate-700 ring-slate-200') }}">
+            <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true"></span>
+            {{ delivery_status_labels.get(delivery.status, delivery.status|replace('_', ' ')|title) }}
+          </span>
+        </div>
+
+        <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt class="text-[10px] font-black uppercase tracking-[.12em] text-slate-400">Destinatário</dt>
+            <dd class="mt-1 break-all text-sm font-semibold leading-5 text-slate-700">{{ delivery.recipient }}</dd>
+          </div>
+          <div>
+            <dt class="text-[10px] font-black uppercase tracking-[.12em] text-slate-400">Tentativas</dt>
+            <dd class="mt-1 font-mono text-sm font-black text-slate-800">{{ delivery.attempts }}</dd>
+          </div>
+          <div>
+            <dt class="text-[10px] font-black uppercase tracking-[.12em] text-slate-400">Criada em</dt>
+            <dd class="mt-1 text-sm font-semibold text-slate-700">{{ delivery.created_at|local_datetime('%d/%m/%Y · %H:%M') }}</dd>
+          </div>
+          <div>
+            <dt class="text-[10px] font-black uppercase tracking-[.12em] text-slate-400">
+              {% if delivery.sent_at %}Enviada em{% elif delivery.next_attempt_at %}Próxima tentativa{% else %}Agenda{% endif %}
+            </dt>
+            <dd class="mt-1 text-sm font-semibold text-slate-700">
+              {% if delivery.sent_at %}
+                {{ delivery.sent_at|local_datetime('%d/%m/%Y · %H:%M') }}
+              {% elif delivery.next_attempt_at %}
+                {{ delivery.next_attempt_at|local_datetime('%d/%m/%Y · %H:%M') }}
+              {% else %}
+                Sem agendamento
+              {% endif %}
+            </dd>
+          </div>
+        </dl>
+
+        {% if delivery.last_error %}
+        <div class="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+          <p class="text-xs font-black text-red-900">Último erro</p>
+          <p class="mt-1 break-words text-sm font-semibold leading-6 text-red-800">{{ delivery.last_error }}</p>
+        </div>
+        {% endif %}
+
+        {% if delivery.ticket_id %}
+        <a href="/tickets/{{ delivery.ticket_id }}" class="btn-secondary mt-4 min-h-[44px] w-full focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100">
+          Ver demanda #{{ '%04d'|format(delivery.ticket_id) }}
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </a>
+        {% endif %}
+        {% if delivery.status == 'failed' %}
+        <form method="post" action="/admin/operacao/notificacoes/{{ delivery.id }}/repetir" class="mt-3">
+          <button type="submit" class="btn-premium min-h-[44px] w-full focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-200">
+            Tentar envio novamente
+          </button>
+        </form>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="premium-card flex flex-col items-center px-6 py-16 text-center">
+      <div class="flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-100 text-slate-500">
+        <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+      </div>
+      {% if search_query or active_status or active_event %}
+      <h3 class="mt-5 text-lg font-black text-slate-900">Nenhuma entrega encontrada</h3>
+      <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Não há registros que correspondam à busca e aos filtros atuais.</p>
+      <a href="{{ request.url.path }}" class="btn-secondary mt-5 min-h-[44px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200">Limpar filtros</a>
+      {% else %}
+      <h3 class="mt-5 text-lg font-black text-slate-900">A fila está vazia</h3>
+      <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">As próximas notificações processadas aparecerão automaticamente neste histórico.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+
+  {% if total_pages > 1 %}
+  <nav class="premium-card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between" aria-label="Paginação das entregas">
+    <p class="text-sm font-semibold text-slate-500">
+      Página <strong class="text-slate-900">{{ page }}</strong> de <strong class="text-slate-900">{{ total_pages }}</strong>
+    </p>
+    <div class="flex items-center gap-2">
+      {% if page > 1 %}
+      <a
+        href="{{ request.url.path }}?q={{ search_query|default('', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;event={{ active_event|default('', true)|urlencode }}&amp;page={{ page - 1 }}"
+        class="btn-secondary min-h-[44px] min-w-[112px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200"
+        rel="prev"
+      >
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        Anterior
+      </a>
+      {% else %}
+      <span class="inline-flex min-h-[44px] min-w-[112px] items-center justify-center gap-2 rounded-[.9rem] border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-extrabold text-slate-400" aria-disabled="true">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        Anterior
+      </span>
+      {% endif %}
+
+      {% if page < total_pages %}
+      <a
+        href="{{ request.url.path }}?q={{ search_query|default('', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;event={{ active_event|default('', true)|urlencode }}&amp;page={{ page + 1 }}"
+        class="btn-secondary min-h-[44px] min-w-[112px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200"
+        rel="next"
+      >
+        Próxima
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+      {% else %}
+      <span class="inline-flex min-h-[44px] min-w-[112px] items-center justify-center gap-2 rounded-[.9rem] border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-extrabold text-slate-400" aria-disabled="true">
+        Próxima
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </span>
+      {% endif %}
+    </div>
+  </nav>
+  {% endif %}
+
+  <section class="premium-card reveal overflow-hidden" aria-labelledby="audit-events-title">
+    <div class="border-b border-slate-100 px-5 py-5 sm:px-6">
+      <h2 id="audit-events-title" class="text-xl font-black text-slate-900">Atividade administrativa recente</h2>
+      <p class="mt-1 text-sm font-medium text-slate-500">Registro resumido das ações relevantes para rastreabilidade.</p>
+    </div>
+
+    {% if audit_events %}
+    <ol class="divide-y divide-slate-100">
+      {% for event in audit_events %}
+      <li class="flex gap-4 px-5 py-5 sm:px-6">
+        <div class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-brandt" aria-hidden="true">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5 2a8 8 0 11-16 0 8 8 0 0116 0z"/>
+          </svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <p class="text-sm font-black text-slate-900">{{ event.actor_name }} <span class="font-semibold text-slate-600">{{ event.action }}</span></p>
+            <time class="shrink-0 text-xs font-semibold text-slate-500">{{ event.created_at|local_datetime('%d/%m/%Y · %H:%M') }}</time>
+          </div>
+          <p class="mt-2 break-words text-sm font-medium leading-6 text-slate-600">{{ event.summary }}</p>
+          {% if event.ticket_id %}
+          <a href="/tickets/{{ event.ticket_id }}" class="mt-2 inline-flex min-h-[44px] items-center text-xs font-black text-brandt underline-offset-4 hover:underline focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-100">
+            Abrir demanda #{{ '%04d'|format(event.ticket_id) }}
+          </a>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <div class="px-6 py-12 text-center">
+      <h3 class="text-lg font-black text-slate-900">Nenhuma atividade recente</h3>
+      <p class="mt-2 text-sm font-medium text-slate-500">Os próximos eventos administrativos serão apresentados aqui.</p>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

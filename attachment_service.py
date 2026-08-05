@@ -86,6 +86,15 @@ def attachment_path(attachment: Attachment) -> Path:
     return path
 
 
+def delete_saved_uploads(attachments: list[Attachment]) -> None:
+    """Remove arquivos já gravados quando a transação do banco não confirma."""
+    root = Path(settings.UPLOAD_DIR).resolve()
+    for attachment in attachments:
+        path = (root / attachment.stored_name).resolve()
+        if root in path.parents:
+            path.unlink(missing_ok=True)
+
+
 def is_previewable(content_type: str) -> bool:
     return content_type.lower() in PREVIEW_TYPES
 

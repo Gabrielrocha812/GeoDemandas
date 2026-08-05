@@ -75,19 +75,32 @@
         <div class="my-3 h-px bg-gradient-to-r from-transparent via-emerald-200/70 to-transparent"></div>
         <p class="px-4 pb-2 pt-2 text-[10px] font-black uppercase tracking-[.22em] text-slate-400" :class="sidebarCollapsed ? 'lg:hidden' : ''">Workspace</p>
         <nav class="space-y-1.5">
-          <a href="/" title="Visão geral" class="nav-link {% if request.url.path == '/' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+          {% set requester_home = current_user and current_user.role == 'solicitante' %}
+          <a href="{{ '/minhas-demandas' if requester_home else '/' }}" title="{{ 'Minhas demandas' if requester_home else 'Visão geral' }}" class="nav-link {% if (requester_home and request.url.path == '/minhas-demandas') or (not requester_home and request.url.path == '/') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13h8V3H3v10zm0 8h8v-5H3v5zm11 0h7V11h-7v10zm0-18v5h7V3h-7z"/></svg>
-            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Visão geral</span>
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ 'Minhas demandas' if requester_home else 'Visão geral' }}</span>
           </a>
           <a href="/demandas/nova" title="Cadastrar demanda" class="nav-link {% if request.url.path == '/demandas/nova' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m7-7H5"/></svg>
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Cadastrar demanda</span>
           </a>
+          {% if not requester_home %}
           <a href="/minhas-demandas" title="Minhas demandas" class="nav-link {% if request.url.path == '/minhas-demandas' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M7 3h8l4 4v14H5V3h2zm8 0v5h5"/></svg>
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Minhas demandas</span>
           </a>
+          {% endif %}
+          {% if current_user and current_user.role in ['administrador', 'tecnico'] %}
+          <a href="/kanban" title="Kanban operacional" class="nav-link {% if request.url.path == '/kanban' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5h4v14H4V5zm6 0h4v9h-4V5zm6 0h4v11h-4V5z"/></svg>
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Kanban</span>
+          </a>
+          {% endif %}
           {% if current_user and current_user.role == 'administrador' %}
+          <a href="/admin/operacao" title="Operações e confiabilidade" class="nav-link {% if request.url.path.startswith('/admin/operacao') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19V9m5 10V5m5 14v-7m5 7V3M3 21h18"/></svg>
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Operações</span>
+          </a>
           <a href="/admin/usuarios" title="Usuários e acessos" class="nav-link {% if request.url.path.startswith('/admin/usuarios') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8zm13 10v-2a4 4 0 00-3-3.87m-1-8a4 4 0 010 7.75"/></svg>
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Usuários e acessos</span>

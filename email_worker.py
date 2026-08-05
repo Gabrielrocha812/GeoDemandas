@@ -10,7 +10,8 @@ Fluxo a cada ciclo (a cada EMAIL_POLL_INTERVAL segundos):
   3. Valida o remetente no AD via ldap_auth.validate_sender().
   4. Se válido e ativo -> garante o usuário no banco e cria o Ticket.
      Se inválido -> ignora (loga o motivo).
-  5. Marca o e-mail como lido para não reprocessar.
+  5. Marca o e-mail como lido somente após sucesso ou rejeição definitiva.
+     Falhas transitórias permanecem não lidas para uma nova tentativa.
 
 Em DEV_MODE, ao invés de IMAP real, o worker "injeta" e-mails fictícios uma
 única vez, permitindo testar todo o pipeline sem servidor de e-mail.
@@ -22,19 +23,37 @@ from __future__ import annotations
 
 import asyncio
 import email
+import hashlib
 import logging
+from enum import Enum
 from email.header import decode_header
 from email.utils import parseaddr
 
+from audit_service import record_event
 from config import settings
 from database import SessionLocal, Ticket, TicketPriority, TicketStatus, User
-from ldap_auth import validate_sender
-from notification_service import send_ticket_received
+from ldap_auth import LDAPOperationalError, validate_sender
+from outbox_service import enqueue_ticket_received
+from workflow_service import initialize_sla
 
 logger = logging.getLogger("geodemandas.worker")
 
 # Flag para permitir parada limpa do loop no shutdown.
 _running = False
+
+
+class EmailProcessingResult(str, Enum):
+    """Resultado que determina se a mensagem pode sair da fila IMAP."""
+
+    SUCCESS = "success"
+    PERMANENT_REJECTION = "permanent_rejection"
+    TRANSIENT_FAILURE = "transient_failure"
+
+
+_FINAL_RESULTS = {
+    EmailProcessingResult.SUCCESS,
+    EmailProcessingResult.PERMANENT_REJECTION,
+}
 
 
 # --------------------------------------------------------------------------
@@ -83,7 +102,10 @@ def _poll_imap_once() -> None:
 
     try:
         client.login(settings.IMAP_USER, settings.IMAP_PASSWORD)
-        client.select(settings.IMAP_MAILBOX)
+        status, _ = client.select(settings.IMAP_MAILBOX)
+        if status != "OK":
+            logger.warning("Seleção da caixa IMAP falhou: %s", status)
+            return
 
         status, data = client.search(None, "UNSEEN")
         if status != "OK":
@@ -94,52 +116,147 @@ def _poll_imap_once() -> None:
         logger.info("%d e-mail(s) não lido(s) encontrado(s)", len(message_ids))
 
         for num in message_ids:
-            status, msg_data = client.fetch(num, "(RFC822)")
-            if status != "OK":
+            try:
+                # BODY.PEEK evita que o próprio FETCH aplique \Seen antes de
+                # sabermos se o processamento terminou de forma definitiva.
+                status, msg_data = client.fetch(num, "(BODY.PEEK[])")
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Falha transitória ao buscar mensagem IMAP %r; "
+                    "mensagem mantida não lida",
+                    num,
+                )
                 continue
-            raw = msg_data[0][1]
-            msg = email.message_from_bytes(raw)
-            _handle_message(msg)
-            # Marca como lido para não reprocessar
-            client.store(num, "+FLAGS", "\\Seen")
+            if status != "OK" or not msg_data:
+                logger.warning(
+                    "Busca da mensagem IMAP %r falhou (%s); "
+                    "mensagem mantida não lida",
+                    num,
+                    status,
+                )
+                continue
+
+            raw = next(
+                (
+                    item[1]
+                    for item in msg_data
+                    if isinstance(item, tuple)
+                    and len(item) > 1
+                    and isinstance(item[1], bytes)
+                ),
+                None,
+            )
+            if raw is None:
+                logger.warning(
+                    "Mensagem IMAP %r sem conteúdo RFC822; "
+                    "mensagem mantida não lida",
+                    num,
+                )
+                continue
+
+            try:
+                msg = email.message_from_bytes(raw)
+                result = _handle_message(msg)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Falha transitória inesperada ao processar mensagem IMAP %r; "
+                    "mensagem mantida não lida",
+                    num,
+                )
+                result = EmailProcessingResult.TRANSIENT_FAILURE
+
+            if result not in _FINAL_RESULTS:
+                logger.warning(
+                    "Mensagem IMAP %r mantida não lida para nova tentativa",
+                    num,
+                )
+                continue
+
+            try:
+                store_status, _ = client.store(num, "+FLAGS", "\\Seen")
+                if store_status != "OK":
+                    logger.warning(
+                        "Não foi possível marcar mensagem IMAP %r como lida (%s)",
+                        num,
+                        store_status,
+                    )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Não foi possível marcar mensagem IMAP %r como lida",
+                    num,
+                )
     finally:
         try:
             client.close()
         except Exception:  # noqa: BLE001
             pass
-        client.logout()
+        try:
+            client.logout()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # --------------------------------------------------------------------------
 # Núcleo compartilhado: transforma um EmailMessage em Ticket
 # --------------------------------------------------------------------------
-def _handle_message(msg: email.message.Message) -> None:
+def _handle_message(msg: email.message.Message) -> EmailProcessingResult:
     sender_email = parseaddr(msg.get("From", ""))[1].lower()
+    if not sender_email:
+        logger.info("E-mail rejeitado permanentemente: remetente ausente")
+        return EmailProcessingResult.PERMANENT_REJECTION
+
     subject = _decode_mime(msg.get("Subject", "(sem assunto)"))
     message_id = msg.get("Message-ID")
+    if not message_id:
+        # Alguns equipamentos e integrações omitem Message-ID. O hash da
+        # mensagem mantém a criação idempotente caso o ACK IMAP falhe.
+        digest = hashlib.sha256(msg.as_bytes()).hexdigest()
+        message_id = f"<sha256-{digest}@geodemandas.local>"
     body = _extract_body(msg)
 
-    _create_ticket_from_email(sender_email, subject, body, message_id)
+    return _create_ticket_from_email(sender_email, subject, body, message_id)
 
 
 def _create_ticket_from_email(
     sender_email: str, subject: str, body: str, message_id: str | None
-) -> None:
-    """Valida remetente no AD e cria o ticket. Retorna silenciosamente se inválido."""
+) -> EmailProcessingResult:
+    """Valida o remetente e retorna um resultado explícito do processamento."""
     # 1) Validação no Active Directory
-    ad_user = validate_sender(sender_email)
-    if not ad_user:
-        logger.info("E-mail rejeitado (remetente não validado no AD): %s", sender_email)
-        return
-
-    db = SessionLocal()
     try:
+        ad_user = validate_sender(sender_email)
+    except LDAPOperationalError:
+        logger.warning(
+            "Falha transitória ao validar remetente no diretório; "
+            "e-mail será tentado novamente"
+        )
+        return EmailProcessingResult.TRANSIENT_FAILURE
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Falha transitória inesperada durante validação do remetente; "
+            "e-mail será tentado novamente"
+        )
+        return EmailProcessingResult.TRANSIENT_FAILURE
+
+    if not ad_user:
+        logger.info(
+            "E-mail rejeitado permanentemente "
+            "(remetente inexistente ou inativo no AD): %s",
+            sender_email,
+        )
+        return EmailProcessingResult.PERMANENT_REJECTION
+
+    db = None
+    ticket = None
+    user = None
+    try:
+        db = SessionLocal()
+
         # 2) Evita duplicidade pelo Message-ID
         if message_id:
             exists = db.query(Ticket).filter(Ticket.source_message_id == message_id).first()
             if exists:
                 logger.info("E-mail já processado (Message-ID duplicado): %s", message_id)
-                return
+                return EmailProcessingResult.SUCCESS
 
         # 3) Garante o usuário no banco (sincroniza do AD se necessário)
         user = db.query(User).filter(User.email == sender_email).first()
@@ -160,25 +277,59 @@ def _create_ticket_from_email(
             body=body.strip() or "(e-mail sem corpo)",
             status=TicketStatus.ABERTO,
             priority=_guess_priority(subject, body),
+            source_channel="email",
             source_message_id=message_id,
             requester_id=user.id,
         )
+        initialize_sla(ticket)
         db.add(ticket)
-        db.commit()
-        db.refresh(ticket)
-        logger.info("Ticket #%s criado para %s", ticket.id, sender_email)
-        send_ticket_received(
+        db.flush()
+        record_event(
+            db,
+            "ticket.created",
+            ticket=ticket,
+            summary="Demanda criada pela caixa de e-mail.",
+            changes={
+                "status": ticket.status,
+                "priority": ticket.priority,
+                "source_channel": ticket.source_channel,
+                "attachment_count": 0,
+            },
+            source="imap",
+            actor_type="worker",
+        )
+        enqueue_ticket_received(
+            db,
             user.email,
             user.full_name,
             ticket.id,
             ticket.subject,
             ticket.priority.value,
+            dedupe_key=f"ticket-received:{ticket.id}",
         )
-    except Exception as exc:  # noqa: BLE001
-        db.rollback()
-        logger.exception("Falha ao criar ticket de %s: %s", sender_email, exc)
+        db.commit()
+        db.refresh(ticket)
+        logger.info("Ticket #%s criado para %s", ticket.id, sender_email)
+    except Exception:  # noqa: BLE001
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha adicional ao desfazer transação do worker")
+        logger.exception(
+            "Falha transitória ao criar ticket para %s; "
+            "e-mail será tentado novamente",
+            sender_email,
+        )
+        return EmailProcessingResult.TRANSIENT_FAILURE
     finally:
-        db.close()
+        if db is not None:
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha ao fechar sessão do worker")
+
+    return EmailProcessingResult.SUCCESS
 
 
 # --------------------------------------------------------------------------

@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Minhas demandas · GeoDemandas{% endblock %}
-{% set status_styles = {'Aberto':'bg-amber-50 text-amber-700 ring-amber-200','Em Andamento':'bg-sky-50 text-sky-700 ring-sky-200','Concluído':'bg-emerald-50 text-emerald-700 ring-emerald-200'} %}
+{% set status_styles = {
+  'Aberto':'bg-amber-50 text-amber-700 ring-amber-200',
+  'Em Triagem':'bg-violet-50 text-violet-700 ring-violet-200',
+  'Em Andamento':'bg-sky-50 text-sky-700 ring-sky-200',
+  'Aguardando Solicitante':'bg-yellow-50 text-yellow-800 ring-yellow-200',
+  'Bloqueado':'bg-red-50 text-red-700 ring-red-200',
+  'Resolvido':'bg-teal-50 text-teal-700 ring-teal-200',
+  'Concluído':'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  'Cancelado':'bg-slate-100 text-slate-600 ring-slate-200',
+  'Reaberto':'bg-orange-50 text-orange-700 ring-orange-200'
+} %}
 {% set priority_styles = {'Baixa':'bg-slate-100 text-slate-600','Média':'bg-blue-50 text-blue-700','Alta':'bg-orange-50 text-orange-700','Urgente':'bg-red-50 text-red-700'} %}
 
 {% block content %}
@@ -26,8 +36,55 @@
     {% endfor %}
   </section>
 
+  <section class="premium-card reveal p-4 sm:p-6" style="--delay:220ms" aria-labelledby="my-demands-filters-title">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h2 id="my-demands-filters-title" class="text-base font-black text-slate-900">Encontre uma solicitação</h2>
+        <p class="mt-1 text-xs font-medium text-slate-500">Busque pelo número ou assunto e refine pelo status do atendimento.</p>
+      </div>
+      <p class="text-sm font-extrabold text-slate-700" aria-live="polite">
+        {{ total_items }} demanda{% if total_items != 1 %}s{% endif %}
+      </p>
+    </div>
+
+    <form method="get" action="/minhas-demandas" class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)_auto]" role="search" aria-labelledby="my-demands-filters-title">
+      <div>
+        <label for="my-demands-search" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Buscar demanda</label>
+        <div class="relative">
+          <svg class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M20 20l-4-4"/></svg>
+          <input
+            id="my-demands-search"
+            name="q"
+            type="search"
+            value="{{ search_query or '' }}"
+            placeholder="Número ou assunto"
+            autocomplete="off"
+            class="field-premium pl-12"
+          >
+        </div>
+      </div>
+      <div>
+        <label for="my-demands-status" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Status</label>
+        <select id="my-demands-status" name="status" class="field-premium cursor-pointer">
+          <option value="">Todos os status</option>
+          {% for option in status_options %}
+          <option value="{{ option.value }}" {% if active_status == option.value %}selected{% endif %}>{{ option.value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex flex-col gap-2 self-end sm:flex-row md:col-span-2 xl:col-span-1">
+        <a href="/minhas-demandas" class="btn-secondary w-full xl:w-auto">Limpar</a>
+        <button type="submit" class="btn-premium w-full xl:w-auto">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16M7 12h10m-6 7h2"/></svg>
+          Filtrar
+        </button>
+      </div>
+    </form>
+  </section>
+
   <section class="space-y-3">
     {% for ticket in tickets %}
+    {% set ticket_sla = sla_by_ticket[ticket.id] %}
     <a href="/tickets/{{ ticket.id }}" class="premium-card ticket-row reveal group block p-5 sm:p-6" style="--delay:{{ loop.index0 * 45 + 220 }}ms">
       <div class="flex items-start gap-4">
         <div class="brand-mark hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white sm:flex">
@@ -36,18 +93,26 @@
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-mono text-[11px] font-black text-slate-400">#{{ '%04d'|format(ticket.id) }}</span>
-            <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset {{ status_styles.get(ticket.status.value,'') }}"><span class="h-1.5 w-1.5 rounded-full bg-current"></span>{{ ticket.status.value }}</span>
+            <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset {{ status_styles.get(ticket.status.value,'bg-slate-100 text-slate-600 ring-slate-200') }}"><span class="h-1.5 w-1.5 rounded-full bg-current"></span>{{ ticket.status.value }}</span>
             <span class="rounded-full px-2.5 py-1 text-[10px] font-extrabold {{ priority_styles.get(ticket.priority.value,'') }}">{{ ticket.priority.value }}</span>
+            {% if ticket.project_name %}
+            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-extrabold text-slate-500">{{ ticket.project_name }}</span>
+            {% endif %}
+            {% if ticket.status.value == 'Aguardando Solicitante' %}
+            <span class="rounded-full bg-orange-100 px-2.5 py-1 text-[10px] font-black text-orange-800">Sua resposta é necessária</span>
+            {% elif ticket_sla.state in ['risk', 'overdue'] %}
+            <span class="rounded-full px-2.5 py-1 text-[10px] font-black {% if ticket_sla.state == 'overdue' %}bg-red-100 text-red-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ ticket_sla.label }}</span>
+            {% endif %}
           </div>
           <h2 class="mt-3 truncate text-base font-black text-slate-900 transition group-hover:text-brandt sm:text-lg">{{ ticket.subject }}</h2>
           <p class="mt-1 line-clamp-1 text-sm font-medium text-slate-500">{{ ticket.body }}</p>
           <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-semibold text-slate-400">
-            <span>Atualizada em {{ ticket.updated_at.strftime('%d/%m/%Y às %H:%M') }}</span>
+            <span>Atualizada em {{ (ticket.last_activity_at or ticket.updated_at)|local_datetime('%d/%m/%Y às %H:%M') }}</span>
             <span class="flex items-center gap-1.5">
               <span class="h-2 w-2 rounded-full {% if ticket.assignee %}bg-emerald-500{% else %}bg-slate-300{% endif %}"></span>
               {% if ticket.assignee %}Responsável: {{ ticket.assignee.full_name }}{% else %}Aguardando responsável{% endif %}
             </span>
-            <span>{{ ticket.comments|length }} interações</span>
+            <span>{{ ticket.comments|rejectattr('is_internal')|list|length }} interações</span>
           </div>
         </div>
         <svg class="mt-2 h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-1 group-hover:text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -56,11 +121,62 @@
     {% else %}
     <div class="premium-card flex flex-col items-center px-6 py-20 text-center">
       <div class="brand-mark float-soft flex h-20 w-20 items-center justify-center rounded-3xl text-white"><svg class="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m7-7H5"/></svg></div>
+      {% if search_query %}
+      <h2 class="mt-6 text-xl font-black text-slate-900">Nenhuma demanda encontrada</h2>
+      <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Não encontramos resultados para “{{ search_query }}”{% if active_status %} com status “{{ active_status }}”{% endif %}.</p>
+      <a href="/minhas-demandas" class="btn-secondary mt-6">Limpar filtros</a>
+      {% elif active_status %}
+      <h2 class="mt-6 text-xl font-black text-slate-900">Nenhuma demanda com este status</h2>
+      <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Você não possui solicitações com status “{{ active_status }}” neste momento.</p>
+      <a href="/minhas-demandas" class="btn-secondary mt-6">Ver todas as demandas</a>
+      {% else %}
       <h2 class="mt-6 text-xl font-black text-slate-900">Você ainda não abriu demandas</h2>
       <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Cadastre sua primeira solicitação e acompanhe todo o atendimento por aqui.</p>
       <a href="/demandas/nova" class="btn-premium mt-6">Cadastrar primeira demanda</a>
+      {% endif %}
     </div>
     {% endfor %}
   </section>
+
+  {% if total_pages > 1 %}
+  <nav class="premium-card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between" aria-label="Paginação das minhas demandas">
+    <p class="text-sm font-semibold text-slate-500">
+      Página <strong class="text-slate-900">{{ page }}</strong> de <strong class="text-slate-900">{{ total_pages }}</strong>
+    </p>
+    <div class="flex items-center gap-2">
+      {% if page > 1 %}
+      <a
+        href="/minhas-demandas?q={{ search_query|default('', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;page={{ page - 1 }}"
+        class="btn-secondary min-w-[112px]"
+        rel="prev"
+      >
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        Anterior
+      </a>
+      {% else %}
+      <span class="inline-flex min-h-[44px] min-w-[112px] items-center justify-center gap-2 rounded-[.9rem] border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-extrabold text-slate-400" aria-disabled="true">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        Anterior
+      </span>
+      {% endif %}
+
+      {% if page < total_pages %}
+      <a
+        href="/minhas-demandas?q={{ search_query|default('', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;page={{ page + 1 }}"
+        class="btn-secondary min-w-[112px]"
+        rel="next"
+      >
+        Próxima
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+      {% else %}
+      <span class="inline-flex min-h-[44px] min-w-[112px] items-center justify-center gap-2 rounded-[.9rem] border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-extrabold text-slate-400" aria-disabled="true">
+        Próxima
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </span>
+      {% endif %}
+    </div>
+  </nav>
+  {% endif %}
 </div>
 {% endblock %}

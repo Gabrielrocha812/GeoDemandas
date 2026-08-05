@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # --- Geral ---
     APP_NAME: str = "GeoDemandas Brandt"
     APP_BASE_URL: str = "http://localhost:8000"
+    APP_TIMEZONE: str = "America/Sao_Paulo"
     SECRET_KEY: str = "dev-secret-key"
     DEV_MODE: bool = True
     LDAP_USE_REAL: bool = False
@@ -28,6 +29,19 @@ class Settings(BaseSettings):
 
     # --- Banco de dados ---
     DATABASE_URL: str = "sqlite:///./geodemandas.db"
+
+    # --- SLA operacional (horas corridas; calendário útil entra na próxima etapa) ---
+    SLA_FIRST_RESPONSE_HOURS_BAIXA: int = 24
+    SLA_FIRST_RESPONSE_HOURS_MEDIA: int = 8
+    SLA_FIRST_RESPONSE_HOURS_ALTA: int = 4
+    SLA_FIRST_RESPONSE_HOURS_URGENTE: int = 1
+    SLA_RESOLUTION_HOURS_BAIXA: int = 120
+    SLA_RESOLUTION_HOURS_MEDIA: int = 72
+    SLA_RESOLUTION_HOURS_ALTA: int = 24
+    SLA_RESOLUTION_HOURS_URGENTE: int = 8
+    SLA_RISK_WINDOW_HOURS: int = 4
+    SLA_ALERT_POLL_INTERVAL_SECONDS: int = 300
+    DASHBOARD_PAGE_SIZE: int = 25
 
     # --- IMAP (caixa monitorada) ---
     IMAP_HOST: str = "imap.brandt.com.br"
@@ -49,6 +63,14 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = "geodemandas@brandt.com.br"
     SMTP_FROM_NAME: str = "GeoDemandas Brandt"
 
+    # --- Outbox persistente de notificacoes ---
+    NOTIFICATION_OUTBOX_POLL_INTERVAL: int = 5
+    NOTIFICATION_OUTBOX_BATCH_SIZE: int = 20
+    NOTIFICATION_OUTBOX_MAX_ATTEMPTS: int = 5
+    NOTIFICATION_OUTBOX_RETRY_BASE_SECONDS: int = 30
+    NOTIFICATION_OUTBOX_RETRY_MAX_SECONDS: int = 3600
+    NOTIFICATION_OUTBOX_LOCK_TIMEOUT_SECONDS: int = 300
+
     # --- Microsoft Graph (alternativa recomendada ao SMTP) ---
     GRAPH_TENANT_ID: str = ""
     GRAPH_CLIENT_ID: str = ""
@@ -59,6 +81,14 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     MAX_ATTACHMENT_SIZE_MB: int = 25
     MAX_ATTACHMENTS_PER_MESSAGE: int = 10
+
+    # --- API corporativa de projetos ---
+    # Lista os projetos ativos que podem ser vinculados a uma demanda.
+    # O endpoint exige o token no header "x-token".
+    PROJETOS_API_URL: str = "http://69.64.32.23:8000/projetos"
+    PROJETOS_API_TOKEN: str = "meu_token_secreto"
+    PROJETOS_API_TIMEOUT: int = 10
+    PROJETOS_CACHE_TTL: int = 300
 
     # --- LDAP / Active Directory ---
     LDAP_SERVER: str = "ldap://ad.brandt.com.br"

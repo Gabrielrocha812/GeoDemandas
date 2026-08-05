@@ -60,6 +60,10 @@ _MOCK_AD = {
 ACCOUNT_DISABLE_FLAG = 0x2  # bit de conta desabilitada no userAccountControl
 
 
+class LDAPOperationalError(RuntimeError):
+    """Indica indisponibilidade do LDAP, não uma identidade inválida."""
+
+
 # --------------------------------------------------------------------------
 # API pública
 # --------------------------------------------------------------------------
@@ -70,6 +74,9 @@ def validate_sender(email: str) -> dict | None:
     Retorna:
         dict com {email, full_name, department, active} se válido e ativo;
         None caso não exista ou esteja desabilitado.
+
+    Raises:
+        LDAPOperationalError: se o diretório não puder ser consultado.
     """
     email = (email or "").strip().lower()
     if not email:
@@ -214,9 +221,13 @@ def _validate_sender_ldap(email: str) -> dict | None:
 
     try:
         conn = _get_connection()
-    except LDAPException as exc:
-        logger.error("Falha ao conectar no AD: %s", exc)
-        return None
+    except (LDAPException, OSError):
+        # Não registre detalhes da conexão: exceções de bibliotecas podem
+        # carregar informações sensíveis da configuração do bind.
+        logger.warning("Falha operacional ao conectar no diretório LDAP")
+        raise LDAPOperationalError(
+            "Diretório corporativo temporariamente indisponível"
+        ) from None
 
     try:
         # Alguns usuários da Brandt não possuem o atributo `mail` e usam UPN
@@ -272,11 +283,16 @@ def _validate_sender_ldap(email: str) -> dict | None:
 
         logger.info("Remetente não encontrado no AD: %s", email)
         return None
-    except LDAPException as exc:
-        logger.error("Erro na busca LDAP para %s: %s", email, exc)
-        return None
+    except (LDAPException, OSError):
+        logger.warning("Falha operacional durante consulta ao diretório LDAP")
+        raise LDAPOperationalError(
+            "Diretório corporativo temporariamente indisponível"
+        ) from None
     finally:
-        conn.unbind()
+        try:
+            conn.unbind()
+        except Exception:  # noqa: BLE001
+            logger.warning("Falha ao encerrar conexão com o diretório LDAP")
 
 
 def _authenticate_ldap(email: str, password: str) -> dict | None:

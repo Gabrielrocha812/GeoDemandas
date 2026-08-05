@@ -225,6 +225,36 @@ textarea:focus-visible {
 .ticket-row { transition: transform .3s var(--ease), box-shadow .3s, border-color .3s; }
 .ticket-row:hover { transform: translateX(5px) translateY(-2px); }
 
+.kanban-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 340px);
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: .75rem;
+  scroll-snap-type: x proximity;
+}
+.kanban-column { min-width: 280px; overflow: hidden; scroll-snap-align: start; }
+.kanban-dropzone {
+  min-height: 28rem;
+  transition: background-color .2s ease, box-shadow .2s ease;
+}
+.kanban-dropzone.is-over {
+  background: rgba(22, 179, 100, .06);
+  box-shadow: inset 0 0 0 2px rgba(0, 133, 66, .22);
+}
+.kanban-card {
+  cursor: grab;
+  transition: transform .2s var(--ease), box-shadow .2s, border-color .2s, opacity .2s;
+}
+.kanban-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 133, 66, .25);
+  box-shadow: 0 12px 28px rgba(15, 55, 35, .09);
+}
+.kanban-card:active { cursor: grabbing; }
+.kanban-card.is-dragging { opacity: .45; transform: rotate(1deg) scale(.98); }
+
 .skeleton {
   position: relative;
   overflow: hidden;
@@ -275,6 +305,9 @@ table.dataTable tbody td { border-top: 1px solid rgba(15,75,48,.06) !important; 
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 @media (max-width: 767px) {
+  .kanban-grid {
+    grid-auto-columns: minmax(86vw, 1fr);
+  }
   .dt-layout-row { align-items: stretch; flex-direction: column; }
   .dt-layout-cell { width: 100%; }
   .dt-search input { width: calc(100% - 5rem); }

@@ -1,7 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Visão geral · GeoDemandas{% endblock %}
-{% set status_styles = {'Aberto':'bg-amber-50 text-amber-700 ring-amber-200','Em Andamento':'bg-sky-50 text-sky-700 ring-sky-200','Concluído':'bg-emerald-50 text-emerald-700 ring-emerald-200'} %}
+{% set status_styles = {
+  'Aberto':'bg-amber-50 text-amber-700 ring-amber-200',
+  'Em Triagem':'bg-violet-50 text-violet-700 ring-violet-200',
+  'Em Andamento':'bg-sky-50 text-sky-700 ring-sky-200',
+  'Aguardando Solicitante':'bg-yellow-50 text-yellow-800 ring-yellow-200',
+  'Bloqueado':'bg-red-50 text-red-700 ring-red-200',
+  'Resolvido':'bg-teal-50 text-teal-700 ring-teal-200',
+  'Concluído':'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  'Cancelado':'bg-slate-100 text-slate-600 ring-slate-200',
+  'Reaberto':'bg-orange-50 text-orange-700 ring-orange-200'
+} %}
 {% set priority_styles = {'Baixa':'bg-slate-100 text-slate-600','Média':'bg-blue-50 text-blue-700','Alta':'bg-orange-50 text-orange-700','Urgente':'bg-red-50 text-red-700'} %}
+{% set queue_options = [
+  ('all', 'Todas'),
+  ('mine', 'Minhas'),
+  ('unassigned', 'Não atribuídas'),
+  ('waiting', 'Aguardando solicitante'),
+  ('sla_risk', 'SLA em risco'),
+  ('overdue', 'Vencidas')
+] %}
+{% set queue_empty_states = {
+  'mine': ('Nenhuma demanda atribuída a você', 'Quando uma demanda for direcionada para você, ela aparecerá nesta fila.'),
+  'unassigned': ('Nenhuma demanda sem responsável', 'Todas as demandas desta fila já possuem uma pessoa responsável.'),
+  'waiting': ('Nenhuma resposta pendente', 'Não há demandas aguardando retorno do solicitante neste momento.'),
+  'sla_risk': ('Nenhum SLA em risco', 'Os prazos das demandas estão dentro da margem de atendimento.'),
+  'overdue': ('Nenhuma demanda vencida', 'Não há demandas com prazo de atendimento ultrapassado.')
+} %}
 
 {% block content %}
 <div x-data="{ loading: true }" x-init="setTimeout(() => loading=false, 380)" class="space-y-7">
@@ -46,41 +71,124 @@
     {% endfor %}
   </section>
 
-  <section class="premium-card reveal p-4 sm:p-5" style="--delay:360ms">
-    <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-      <div><p class="text-sm font-black text-slate-900">Filtros inteligentes</p><p class="mt-1 text-xs font-medium text-slate-400">Refine a fila operacional em um clique</p></div>
-      <div class="flex flex-wrap gap-2">
-        <a href="/" class="rounded-xl px-3.5 py-2 text-xs font-extrabold transition {% if not active_status and not active_priority %}bg-slate-900 text-white shadow-lg{% else %}bg-slate-50 text-slate-600 hover:bg-slate-100{% endif %}">Todos</a>
-        {% for st in ['Aberto','Em Andamento','Concluído'] %}
-        <a href="/?status={{ st }}" class="rounded-xl px-3.5 py-2 text-xs font-extrabold transition {% if active_status == st %}bg-brandt text-white shadow-lg{% else %}bg-slate-50 text-slate-600 hover:bg-emerald-50 hover:text-brandt{% endif %}">{{ st }}</a>
-        {% endfor %}
-        <span class="mx-1 hidden h-8 w-px bg-slate-200 sm:block"></span>
-        {% for pr in ['Baixa','Média','Alta','Urgente'] %}
-        <a href="/?priority={{ pr }}" class="rounded-xl px-3.5 py-2 text-xs font-extrabold transition {% if active_priority == pr %}bg-slate-900 text-white shadow-lg{% else %}bg-slate-50 text-slate-600 hover:bg-slate-100{% endif %}">{{ pr }}</a>
-        {% endfor %}
+  <section class="premium-card reveal p-4 sm:p-6" style="--delay:360ms" aria-labelledby="dashboard-filters-title">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h2 id="dashboard-filters-title" class="text-base font-black text-slate-900">Filas e filtros</h2>
+        <p class="mt-1 text-xs font-medium text-slate-500">Combine fila, busca, status e prioridade para encontrar o próximo atendimento.</p>
       </div>
+      <p class="text-sm font-extrabold text-slate-700" aria-live="polite">
+        {{ total_items }} demanda{% if total_items != 1 %}s{% endif %}
+      </p>
     </div>
+
+    <form method="get" action="/" class="mt-5 space-y-5" role="search" aria-labelledby="dashboard-filters-title">
+      <fieldset>
+        <legend class="text-xs font-black uppercase tracking-[.12em] text-slate-500">Fila operacional</legend>
+        <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          {% for queue_value, queue_label in queue_options %}
+          <label class="cursor-pointer">
+            <input
+              type="radio"
+              name="queue"
+              value="{{ queue_value }}"
+              class="peer sr-only"
+              {% if (active_queue|default('all', true)) == queue_value %}checked{% endif %}
+            >
+            <span class="flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-xs font-extrabold text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-brandt peer-checked:border-brandt peer-checked:bg-brandt peer-checked:text-white peer-checked:shadow-lg peer-checked:hover:bg-brandt peer-checked:hover:text-white peer-focus-visible:ring-4 peer-focus-visible:ring-emerald-100">
+              <span>{{ queue_label }}</span>
+              {% if queue_counts %}
+              <span class="ml-1 rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] text-current">{{ queue_counts.get(queue_value, 0) }}</span>
+              {% endif %}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div class="md:col-span-2">
+          <label for="dashboard-search" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Buscar demanda</label>
+          <div class="relative">
+            <svg class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M20 20l-4-4"/></svg>
+            <input
+              id="dashboard-search"
+              name="q"
+              type="search"
+              value="{{ search_query or '' }}"
+              placeholder="Número, assunto ou solicitante"
+              autocomplete="off"
+              class="field-premium pl-12"
+            >
+          </div>
+        </div>
+        <div>
+          <label for="dashboard-status" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Status</label>
+          <select id="dashboard-status" name="status" class="field-premium cursor-pointer">
+            <option value="">Todos os status</option>
+            {% for option in status_options %}
+            <option value="{{ option.value }}" {% if active_status == option.value %}selected{% endif %}>{{ option.value }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="dashboard-priority" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Prioridade</label>
+          <select id="dashboard-priority" name="priority" class="field-premium cursor-pointer">
+            <option value="">Todas as prioridades</option>
+            {% for option in priority_options %}
+            <option value="{{ option.value }}" {% if active_priority == option.value %}selected{% endif %}>{{ option.value }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <a href="/" class="btn-secondary w-full sm:w-auto">Limpar filtros</a>
+        <button type="submit" class="btn-premium w-full sm:w-auto">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16M7 12h10m-6 7h2"/></svg>
+          Aplicar filtros
+        </button>
+      </div>
+    </form>
   </section>
 
   <div x-show="loading" class="space-y-3"><div class="skeleton h-28 rounded-3xl"></div><div class="skeleton h-28 rounded-3xl"></div><div class="skeleton h-28 rounded-3xl"></div></div>
   <section x-show="!loading" x-cloak class="space-y-3" aria-label="Lista de demandas">
     {% if tickets %}
       {% for ticket in tickets %}
+      {% set ticket_sla = sla_by_ticket[ticket.id] %}
       <a href="/tickets/{{ ticket.id }}" class="premium-card ticket-row reveal group block p-5 sm:p-6" style="--delay:{{ loop.index0 * 45 }}ms">
         <div class="flex items-start gap-4">
           <div class="hidden h-14 w-1 shrink-0 rounded-full bg-gradient-to-b {% if ticket.priority.value == 'Urgente' %}from-red-400 to-red-600{% elif ticket.priority.value == 'Alta' %}from-orange-300 to-orange-500{% else %}from-emerald-300 to-brandt{% endif %} sm:block"></div>
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-mono text-[11px] font-black tracking-wider text-slate-400">#{{ '%04d'|format(ticket.id) }}</span>
-              <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset {{ status_styles.get(ticket.status.value,'') }}"><span class="h-1.5 w-1.5 rounded-full bg-current"></span>{{ ticket.status.value }}</span>
+              <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset {{ status_styles.get(ticket.status.value,'bg-slate-100 text-slate-600 ring-slate-200') }}"><span class="h-1.5 w-1.5 rounded-full bg-current"></span>{{ ticket.status.value }}</span>
               <span class="rounded-full px-2.5 py-1 text-[10px] font-extrabold {{ priority_styles.get(ticket.priority.value,'') }}">{{ ticket.priority.value }}</span>
+              {% if ticket.project_name %}
+              <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-extrabold text-slate-500">{{ ticket.project_name }}</span>
+              {% endif %}
+              <span class="rounded-full px-2.5 py-1 text-[10px] font-black
+                {% if ticket_sla.state == 'overdue' %}bg-red-100 text-red-800
+                {% elif ticket_sla.state == 'risk' %}bg-amber-100 text-amber-800
+                {% elif ticket_sla.state == 'paused' %}bg-blue-100 text-blue-800
+                {% else %}bg-emerald-100 text-emerald-800{% endif %}">
+                {{ ticket_sla.label }}
+              </span>
+              {% if ticket.hub %}
+              <span class="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-extrabold text-indigo-700">{{ ticket.hub }}</span>
+              {% endif %}
             </div>
             <h2 class="mt-3 truncate text-base font-black text-slate-900 transition-colors group-hover:text-brandt sm:text-lg">{{ ticket.subject }}</h2>
             <p class="mt-1 line-clamp-1 text-sm font-medium text-slate-500">{{ ticket.body }}</p>
           </div>
           <div class="hidden shrink-0 items-center gap-3 md:flex">
             <div class="brand-mark flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black text-white">{{ ticket.requester.full_name[0]|upper }}</div>
-            <div class="w-36"><p class="truncate text-xs font-extrabold text-slate-800">{{ ticket.requester.full_name }}</p><p class="mt-1 truncate text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ ticket.created_at.strftime('%d/%m · %H:%M') }}</p></div>
+            <div class="w-44">
+              <p class="truncate text-xs font-extrabold text-slate-800">{{ ticket.requester.full_name }}</p>
+              <p class="mt-1 truncate text-[10px] font-semibold text-slate-500">{{ ticket.assignee.full_name if ticket.assignee else 'Não atribuída' }}</p>
+              <p class="mt-1 truncate text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ (ticket.last_activity_at or ticket.updated_at)|local_datetime('%d/%m · %H:%M') }}</p>
+            </div>
             <svg class="h-5 w-5 text-slate-300 transition group-hover:translate-x-1 group-hover:text-brandt" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
           </div>
         </div>
@@ -89,9 +197,66 @@
     {% else %}
       <div class="premium-card flex flex-col items-center px-6 py-20 text-center">
         <div class="brand-mark float-soft flex h-20 w-20 items-center justify-center rounded-3xl text-white"><svg class="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg></div>
-        <h2 class="mt-6 text-xl font-black text-slate-900">Sua fila está limpa</h2><p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Novas demandas aparecerão automaticamente assim que forem validadas.</p>
+        {% set queue_empty = queue_empty_states.get(active_queue) %}
+        {% if search_query %}
+        <h2 class="mt-6 text-xl font-black text-slate-900">Nenhuma demanda encontrada</h2>
+        <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Não encontramos resultados para “{{ search_query }}” com os filtros atuais.</p>
+        {% elif queue_empty %}
+        <h2 class="mt-6 text-xl font-black text-slate-900">{{ queue_empty[0] }}</h2>
+        <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">{{ queue_empty[1] }}</p>
+        {% elif active_status or active_priority %}
+        <h2 class="mt-6 text-xl font-black text-slate-900">Nenhuma demanda neste recorte</h2>
+        <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Ajuste o status ou a prioridade para ampliar os resultados da fila.</p>
+        {% else %}
+        <h2 class="mt-6 text-xl font-black text-slate-900">Sua fila está limpa</h2>
+        <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Novas demandas aparecerão automaticamente assim que forem validadas.</p>
+        {% endif %}
+        {% if search_query or (active_queue and active_queue != 'all') or active_status or active_priority %}
+        <a href="/" class="btn-secondary mt-6">Limpar filtros</a>
+        {% endif %}
       </div>
     {% endif %}
   </section>
+
+  {% if total_pages > 1 %}
+  <nav x-show="!loading" x-cloak class="premium-card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between" aria-label="Paginação das demandas">
+    <p class="text-sm font-semibold text-slate-500">
+      Página <strong class="text-slate-900">{{ page }}</strong> de <strong class="text-slate-900">{{ total_pages }}</strong>
+    </p>
+    <div class="flex items-center gap-2">
+      {% if page > 1 %}
+      <a
+        href="/?q={{ search_query|default('', true)|urlencode }}&amp;queue={{ active_queue|default('all', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;priority={{ active_priority|default('', true)|urlencode }}&amp;page={{ page - 1 }}"
+        class="btn-secondary min-w-[112px]"
+        rel="prev"
+      >
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        Anterior
+      </a>
+      {% else %}
+      <span class="inline-flex min-h-[44px] min-w-[112px] items-center justify-center gap-2 rounded-[.9rem] border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-extrabold text-slate-400" aria-disabled="true">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        Anterior
+      </span>
+      {% endif %}
+
+      {% if page < total_pages %}
+      <a
+        href="/?q={{ search_query|default('', true)|urlencode }}&amp;queue={{ active_queue|default('all', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;priority={{ active_priority|default('', true)|urlencode }}&amp;page={{ page + 1 }}"
+        class="btn-secondary min-w-[112px]"
+        rel="next"
+      >
+        Próxima
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+      {% else %}
+      <span class="inline-flex min-h-[44px] min-w-[112px] items-center justify-center gap-2 rounded-[.9rem] border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-extrabold text-slate-400" aria-disabled="true">
+        Próxima
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </span>
+      {% endif %}
+    </div>
+  </nav>
+  {% endif %}
 </div>
 {% endblock %}

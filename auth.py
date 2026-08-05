@@ -25,6 +25,7 @@ from database import SessionLocal, User, get_db
 ROLE_ADMIN = "administrador"
 ROLE_TECHNICIAN = "tecnico"
 ROLE_REQUESTER = "solicitante"
+VALID_ROLES = {ROLE_ADMIN, ROLE_TECHNICIAN, ROLE_REQUESTER}
 
 
 def login_user(request: Request, user: User) -> None:
@@ -57,6 +58,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuário inválido ou inativo",
             headers={"Location": "/login"},
+        )
+    if user.role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Perfil de acesso inválido. Procure um administrador.",
         )
     return user
 

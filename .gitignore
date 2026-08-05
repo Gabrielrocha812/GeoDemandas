@@ -1,10 +1,13 @@
 # Ambiente
 .venv/
+venv/
 __pycache__/
 *.pyc
 
 # Configuração local e banco
 .env
+.env*
+!.env.example
 *.db
 geodemandas.db
 *-preview.png

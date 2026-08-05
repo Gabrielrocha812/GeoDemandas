@@ -17,7 +17,6 @@ from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -28,6 +27,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from audit_service import record_event
 from auth import (
     ROLE_ADMIN,
     ROLE_REQUESTER,
@@ -37,12 +37,33 @@ from auth import (
 )
 from attachment_service import (
     attachment_path,
+    delete_saved_uploads,
     is_preview_image,
     is_previewable,
     save_uploads,
 )
-from database import Attachment, Comment, Ticket, TicketStatus, User, get_db
-from notification_service import send_ticket_completed, send_ticket_update
+from database import (
+    Attachment,
+    Comment,
+    Ticket,
+    TicketPriority,
+    TicketStatus,
+    User,
+    get_db,
+)
+from outbox_service import enqueue_ticket_completed, enqueue_ticket_update
+from projeto_service import ProjetosUnavailableError, find_projeto
+from time_utils import format_local_datetime, iso_utc
+from workflow_service import (
+    WorkflowError,
+    allowed_statuses,
+    handle_requester_reply,
+    initialize_sla,
+    mark_first_response,
+    sla_snapshot,
+    touch_ticket,
+    transition_ticket,
+)
 
 router = APIRouter(prefix="/api", tags=["api"])
 _typing_lock = Lock()
@@ -54,14 +75,23 @@ _typing_users: dict[int, dict[int, tuple[str, float]]] = {}
 # --------------------------------------------------------------------------
 class CommentIn(BaseModel):
     content: str = Field(..., min_length=1, max_length=5000)
+    is_internal: bool = False
 
 
 class StatusIn(BaseModel):
     status: TicketStatus
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class AssigneeIn(BaseModel):
     assignee_id: int | None = None
+
+
+class TicketMetadataIn(BaseModel):
+    priority: TicketPriority | None = None
+    project_code: int | None = None
+    category: str | None = Field(default=None, max_length=120)
+    hub: str | None = Field(default=None, max_length=255)
 
 
 class TypingIn(BaseModel):
@@ -82,15 +112,21 @@ class CommentOut(BaseModel):
     content: str
     author_name: str
     is_system: bool
+    is_internal: bool
     created_at: str
     attachments: list[AttachmentOut] = Field(default_factory=list)
 
 
 class TicketStateOut(BaseModel):
     status: str
+    allowed_statuses: list[str]
     assignee_id: int | None
     assignee_name: str | None
     updated_at: str
+    last_activity_at: str
+    sla_state: str
+    sla_label: str
+    sla_due_at: str | None
     comments: list[CommentOut]
     typing_users: list[str]
 
@@ -101,7 +137,8 @@ def _serialize_comment(c: Comment) -> CommentOut:
         content=c.content,
         author_name=c.author.full_name,
         is_system=c.is_system,
-        created_at=c.created_at.strftime("%d/%m/%Y %H:%M"),
+        is_internal=c.is_internal,
+        created_at=format_local_datetime(c.created_at),
         attachments=[_serialize_attachment(item) for item in c.attachments],
     )
 
@@ -130,8 +167,58 @@ def _get_ticket_or_404(db: Session, ticket_id: int) -> Ticket:
 
 
 def _ensure_ticket_access(ticket: Ticket, current_user: User) -> None:
-    if current_user.role == ROLE_REQUESTER and ticket.requester_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    if _is_staff(current_user):
+        return
+    if (
+        current_user.role == ROLE_REQUESTER
+        and ticket.requester_id == current_user.id
+    ):
+        return
+    raise HTTPException(status_code=404, detail="Ticket não encontrado")
+
+
+def _is_staff(user: User) -> bool:
+    return user.role in {ROLE_ADMIN, ROLE_TECHNICIAN}
+
+
+def _notification_target(ticket: Ticket, current_user: User) -> User | None:
+    """Retorna a outra ponta da conversa, quando houver destinatário."""
+    if current_user.id == ticket.requester_id:
+        return ticket.assignee
+    return ticket.requester
+
+
+def _append_automatic_reply_event(
+    db: Session,
+    ticket: Ticket,
+    current_user: User,
+) -> None:
+    content = handle_requester_reply(ticket)
+    if content:
+        db.add(
+            Comment(
+                ticket_id=ticket.id,
+                author_id=current_user.id,
+                content=content,
+                is_system=True,
+                is_internal=False,
+            )
+        )
+
+
+def _apply_message_activity(
+    db: Session,
+    ticket: Ticket,
+    current_user: User,
+    *,
+    is_internal: bool,
+) -> None:
+    if is_internal:
+        touch_ticket(ticket)
+    elif _is_staff(current_user):
+        mark_first_response(ticket)
+    else:
+        _append_automatic_reply_event(db, ticket, current_user)
 
 
 def _active_typing_users(ticket_id: int, current_user_id: int) -> list[str]:
@@ -154,17 +241,43 @@ def _active_typing_users(ticket_id: int, current_user_id: int) -> list[str]:
 @router.get("/tickets/{ticket_id}/state", response_model=TicketStateOut)
 def ticket_state(
     ticket_id: int,
+    after_comment_id: int = 0,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     ticket = _get_ticket_or_404(db, ticket_id)
     _ensure_ticket_access(ticket, current_user)
+    sla = sla_snapshot(ticket)
+    comments_query = db.query(Comment).filter(
+        Comment.ticket_id == ticket.id,
+        Comment.id > max(0, after_comment_id),
+    )
+    if not _is_staff(current_user):
+        comments_query = comments_query.filter(Comment.is_internal.is_(False))
+    comments = comments_query.order_by(Comment.id.asc()).all()
     return TicketStateOut(
         status=ticket.status.value,
+        allowed_statuses=[
+            status.value
+            for status in allowed_statuses(
+                ticket, requester=current_user.role == ROLE_REQUESTER
+            )
+        ],
         assignee_id=ticket.assignee_id,
         assignee_name=ticket.assignee.full_name if ticket.assignee else None,
-        updated_at=ticket.updated_at.isoformat(),
-        comments=[_serialize_comment(comment) for comment in ticket.comments],
+        updated_at=iso_utc(ticket.updated_at) or "",
+        last_activity_at=iso_utc(
+            ticket.last_activity_at or ticket.updated_at
+        ) or "",
+        sla_state=sla["state"],
+        sla_label=sla["label"],
+        sla_due_at=(
+            iso_utc(sla.get("due_at"))
+        ),
+        comments=[
+            _serialize_comment(comment)
+            for comment in comments
+        ],
         typing_users=_active_typing_users(ticket.id, current_user.id),
     )
 
@@ -202,10 +315,30 @@ def get_attachment(
     if not attachment:
         raise HTTPException(status_code=404, detail="Anexo não encontrado")
     _ensure_ticket_access(attachment.ticket, current_user)
+    if (
+        current_user.role == ROLE_REQUESTER
+        and attachment.comment is not None
+        and attachment.comment.is_internal
+    ):
+        raise HTTPException(status_code=404, detail="Anexo não encontrado")
     path = attachment_path(attachment)
     inline = is_previewable(attachment.content_type) and not download
     disposition = "inline" if inline else "attachment"
     safe_filename = quote(attachment.original_name)
+    if download:
+        record_event(
+            db,
+            "ticket.attachment.downloaded",
+            actor=current_user,
+            ticket=attachment.ticket,
+            summary="Download explícito de anexo registrado.",
+            changes={"attachment_id": attachment.id},
+            source="api",
+            category="business",
+            resource_type="attachment",
+            resource_id=attachment.id,
+        )
+        db.commit()
     return FileResponse(
         path,
         media_type=attachment.content_type,
@@ -227,53 +360,94 @@ def get_attachment(
 def add_comment(
     ticket_id: int,
     payload: CommentIn,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     ticket = _get_ticket_or_404(db, ticket_id)
     _ensure_ticket_access(ticket, current_user)
+    if payload.is_internal and not _is_staff(current_user):
+        raise HTTPException(status_code=403, detail="Nota interna restrita à equipe")
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="Escreva uma mensagem")
     comment = Comment(
         ticket_id=ticket.id,
         author_id=current_user.id,
-        content=payload.content.strip(),
+        content=content,
         is_system=False,
+        is_internal=payload.is_internal,
     )
     db.add(comment)
+    db.flush()
+    previous_status = ticket.status
+    _apply_message_activity(
+        db,
+        ticket,
+        current_user,
+        is_internal=payload.is_internal,
+    )
+    record_event(
+        db,
+        (
+            "ticket.comment.internal_added"
+            if payload.is_internal
+            else "ticket.comment.public_added"
+        ),
+        actor=current_user,
+        ticket=ticket,
+        summary=(
+            "Nota interna adicionada à demanda."
+            if payload.is_internal
+            else "Mensagem pública adicionada à demanda."
+        ),
+        changes={
+            "comment_id": comment.id,
+            "has_note": True,
+            "attachment_count": 0,
+        },
+        source="api",
+    )
+    if ticket.status != previous_status:
+        record_event(
+            db,
+            "ticket.status.auto_changed",
+            actor=current_user,
+            ticket=ticket,
+            summary="Status da demanda atualizado automaticamente.",
+            changes={
+                "before": {"status": previous_status.value},
+                "after": {"status": ticket.status.value},
+            },
+            source="api",
+        )
+    target = _notification_target(ticket, current_user)
+    if target and not payload.is_internal:
+        enqueue_ticket_update(
+            db,
+            target.email,
+            target.full_name,
+            ticket.id,
+            ticket.subject,
+            "Há uma nova mensagem pública disponível na demanda.",
+        )
     db.commit()
     db.refresh(comment)
-    if current_user.id == ticket.requester_id and ticket.assignee:
-        background_tasks.add_task(
-            send_ticket_update,
-            ticket.assignee.email,
-            ticket.assignee.full_name,
-            ticket.id,
-            ticket.subject,
-            f"Nova mensagem do solicitante {current_user.full_name}: {comment.content[:500]}",
-        )
-    elif current_user.id != ticket.requester_id:
-        background_tasks.add_task(
-            send_ticket_update,
-            ticket.requester.email,
-            ticket.requester.full_name,
-            ticket.id,
-            ticket.subject,
-            f"Novo comentário de {current_user.full_name}: {comment.content[:500]}",
-        )
     return _serialize_comment(comment)
 
 
 @router.post("/tickets/{ticket_id}/messages", response_model=CommentOut)
 def add_message_with_attachments(
     ticket_id: int,
-    background_tasks: BackgroundTasks,
     content: str = Form(""),
+    is_internal: bool = Form(False),
     attachments: list[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     ticket = _get_ticket_or_404(db, ticket_id)
     _ensure_ticket_access(ticket, current_user)
+    if is_internal and not _is_staff(current_user):
+        raise HTTPException(status_code=403, detail="Nota interna restrita à equipe")
     content = content.strip()
     valid_files = [item for item in attachments if item.filename]
     if not content and not valid_files:
@@ -286,40 +460,80 @@ def add_message_with_attachments(
         author_id=current_user.id,
         content=content or "Anexo enviado.",
         is_system=False,
+        is_internal=is_internal,
     )
+    saved_attachments: list[Attachment] = []
     try:
         db.add(comment)
         db.flush()
-        save_uploads(db, ticket, current_user, valid_files, comment=comment)
+        previous_status = ticket.status
+        saved_attachments = save_uploads(
+            db,
+            ticket,
+            current_user,
+            valid_files,
+            comment=comment,
+        )
+        _apply_message_activity(
+            db,
+            ticket,
+            current_user,
+            is_internal=is_internal,
+        )
+        record_event(
+            db,
+            (
+                "ticket.comment.internal_added"
+                if is_internal
+                else "ticket.comment.public_added"
+            ),
+            actor=current_user,
+            ticket=ticket,
+            summary=(
+                "Nota interna adicionada à demanda."
+                if is_internal
+                else "Mensagem pública adicionada à demanda."
+            ),
+            changes={
+                "comment_id": comment.id,
+                "has_note": bool(content),
+                "attachment_count": len(saved_attachments),
+            },
+            source="api",
+        )
+        if ticket.status != previous_status:
+            record_event(
+                db,
+                "ticket.status.auto_changed",
+                actor=current_user,
+                ticket=ticket,
+                summary="Status da demanda atualizado automaticamente.",
+                changes={
+                    "before": {"status": previous_status.value},
+                    "after": {"status": ticket.status.value},
+                },
+                source="api",
+            )
+        update_text = "Há uma nova mensagem pública disponível na demanda."
+        if valid_files:
+            update_text += f" A mensagem possui {len(valid_files)} anexo(s)."
+        target = _notification_target(ticket, current_user)
+        if target and not is_internal:
+            enqueue_ticket_update(
+                db,
+                target.email,
+                target.full_name,
+                ticket.id,
+                ticket.subject,
+                update_text,
+            )
         db.commit()
         db.refresh(comment)
     except Exception:
         db.rollback()
+        delete_saved_uploads(saved_attachments)
         raise
 
-    update_text = (
-        f"Nova mensagem de {current_user.full_name}: {comment.content[:500]}"
-    )
-    if valid_files:
-        update_text += f" ({len(valid_files)} anexo(s))"
-    if current_user.id == ticket.requester_id and ticket.assignee:
-        background_tasks.add_task(
-            send_ticket_update,
-            ticket.assignee.email,
-            ticket.assignee.full_name,
-            ticket.id,
-            ticket.subject,
-            update_text,
-        )
-    elif current_user.id != ticket.requester_id:
-        background_tasks.add_task(
-            send_ticket_update,
-            ticket.requester.email,
-            ticket.requester.full_name,
-            ticket.id,
-            ticket.subject,
-            update_text,
-        )
     return _serialize_comment(comment)
 
 
@@ -330,46 +544,71 @@ def add_message_with_attachments(
 def change_status(
     ticket_id: int,
     payload: StatusIn,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(require_roles(ROLE_ADMIN, ROLE_TECHNICIAN)),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     ticket = _get_ticket_or_404(db, ticket_id)
-    old = ticket.status
-    ticket.status = payload.status
+    _ensure_ticket_access(ticket, current_user)
+    requester_action = current_user.role == ROLE_REQUESTER
+    if not requester_action and not _is_staff(current_user):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    previous_status = ticket.status
+    try:
+        content = transition_ticket(
+            ticket,
+            payload.status,
+            requester=requester_action,
+            note=payload.note,
+        )
+        if not requester_action:
+            mark_first_response(ticket)
+    except WorkflowError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    # Registra o evento na timeline como comentário de sistema
     event = Comment(
         ticket_id=ticket.id,
         author_id=current_user.id,
-        content=f"Status alterado de \"{old.value}\" para \"{payload.status.value}\".",
+        content=content,
         is_system=True,
+        is_internal=False,
     )
     db.add(event)
+    db.flush()
+    record_event(
+        db,
+        "ticket.status.changed",
+        actor=current_user,
+        ticket=ticket,
+        summary="Status da demanda alterado manualmente.",
+        changes={
+            "before": {"status": previous_status.value},
+            "after": {"status": ticket.status.value},
+            "has_note": bool((payload.note or "").strip()),
+            "comment_id": event.id,
+        },
+        source="api",
+    )
+    target = _notification_target(ticket, current_user)
+    if target:
+        if payload.status == TicketStatus.CONCLUIDO and not requester_action:
+            enqueue_ticket_completed(
+                db,
+                target.email,
+                target.full_name,
+                ticket.id,
+                ticket.subject,
+            )
+        else:
+            enqueue_ticket_update(
+                db,
+                target.email,
+                target.full_name,
+                ticket.id,
+                ticket.subject,
+                f"Status da demanda atualizado para {ticket.status.value}.",
+            )
     db.commit()
     db.refresh(event)
-    notification = (
-        send_ticket_completed
-        if payload.status == TicketStatus.CONCLUIDO
-        else send_ticket_update
-    )
-    if payload.status == TicketStatus.CONCLUIDO:
-        background_tasks.add_task(
-            notification,
-            ticket.requester.email,
-            ticket.requester.full_name,
-            ticket.id,
-            ticket.subject,
-        )
-    else:
-        background_tasks.add_task(
-            notification,
-            ticket.requester.email,
-            ticket.requester.full_name,
-            ticket.id,
-            ticket.subject,
-            f'Status alterado para "{payload.status.value}".',
-        )
     return _serialize_comment(event)
 
 
@@ -380,17 +619,18 @@ def change_status(
 def change_assignee(
     ticket_id: int,
     payload: AssigneeIn,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_roles(ROLE_ADMIN, ROLE_TECHNICIAN)),
     db: Session = Depends(get_db),
 ):
     ticket = _get_ticket_or_404(db, ticket_id)
+    previous_assignee_id = ticket.assignee_id
+    assigned_tech: User | None = None
 
     if payload.assignee_id is None:
         ticket.assignee_id = None
         content = "Responsável removido do chamado."
     else:
-        tech = (
+        assigned_tech = (
             db.query(User)
             .filter(
                 User.id == payload.assignee_id,
@@ -399,26 +639,164 @@ def change_assignee(
             )
             .first()
         )
-        if not tech:
+        if not assigned_tech:
             raise HTTPException(status_code=400, detail="Técnico inválido")
-        ticket.assignee_id = tech.id
-        content = f"Chamado atribuído a {tech.full_name}."
+        ticket.assignee_id = assigned_tech.id
+        content = f"Chamado atribuído a {assigned_tech.full_name}."
 
     event = Comment(
         ticket_id=ticket.id,
         author_id=current_user.id,
         content=content,
         is_system=True,
+        is_internal=False,
     )
     db.add(event)
-    db.commit()
-    db.refresh(event)
-    background_tasks.add_task(
-        send_ticket_update,
+    db.flush()
+    touch_ticket(ticket)
+    record_event(
+        db,
+        "ticket.assignee.changed",
+        actor=current_user,
+        ticket=ticket,
+        summary="Responsável pela demanda alterado.",
+        changes={
+            "before": {"assignee_id": previous_assignee_id},
+            "after": {"assignee_id": ticket.assignee_id},
+            "comment_id": event.id,
+        },
+        source="api",
+    )
+    enqueue_ticket_update(
+        db,
         ticket.requester.email,
         ticket.requester.full_name,
         ticket.id,
         ticket.subject,
-        content,
+        "A responsabilidade pelo atendimento foi atualizada.",
     )
+    if (
+        assigned_tech is not None
+        and assigned_tech.id != previous_assignee_id
+        and assigned_tech.id != current_user.id
+    ):
+        enqueue_ticket_update(
+            db,
+            assigned_tech.email,
+            assigned_tech.full_name,
+            ticket.id,
+            ticket.subject,
+            "Você foi definido como responsável por esta demanda.",
+        )
+    db.commit()
+    db.refresh(event)
+    return _serialize_comment(event)
+
+
+# --------------------------------------------------------------------------
+# Metadados operacionais
+# --------------------------------------------------------------------------
+@router.patch("/tickets/{ticket_id}/metadata", response_model=CommentOut)
+def change_ticket_metadata(
+    ticket_id: int,
+    payload: TicketMetadataIn,
+    current_user: User = Depends(require_roles(ROLE_ADMIN, ROLE_TECHNICIAN)),
+    db: Session = Depends(get_db),
+):
+    ticket = _get_ticket_or_404(db, ticket_id)
+    changed: list[str] = []
+    audit_before: dict[str, object] = {}
+    audit_after: dict[str, object] = {}
+    fields = payload.model_fields_set
+
+    if "priority" in fields:
+        if payload.priority is None:
+            raise HTTPException(status_code=422, detail="Prioridade obrigatória")
+        if payload.priority != ticket.priority:
+            old_priority = ticket.priority
+            audit_before["priority"] = old_priority.value
+            ticket.priority = payload.priority
+            audit_after["priority"] = payload.priority.value
+            initialize_sla(ticket, reset=True)
+            changed.append(
+                f'prioridade de "{old_priority.value}" para '
+                f'"{payload.priority.value}"'
+            )
+
+    if "project_code" in fields:
+        if payload.project_code is None:
+            if ticket.project_code is not None:
+                audit_before["project_code"] = ticket.project_code
+                ticket.project_code = None
+                ticket.project_name = None
+                audit_after["project_code"] = None
+                changed.append("projeto removido")
+        else:
+            try:
+                projeto = find_projeto(payload.project_code)
+            except ProjetosUnavailableError as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="A lista de projetos está temporariamente indisponível.",
+                ) from exc
+            if projeto is None:
+                raise HTTPException(status_code=422, detail="Projeto inválido")
+            if (
+                ticket.project_code != projeto["cod_projeto"]
+                or ticket.project_name != projeto["cod_projeto_alfa"]
+            ):
+                old_project = ticket.project_name or "sem projeto"
+                audit_before["project_code"] = ticket.project_code
+                ticket.project_code = projeto["cod_projeto"]
+                ticket.project_name = projeto["cod_projeto_alfa"]
+                audit_after["project_code"] = ticket.project_code
+                changed.append(
+                    f'projeto de "{old_project}" para '
+                    f'"{ticket.project_name}"'
+                )
+
+    for field_name, label in (("category", "categoria"), ("hub", "hub")):
+        if field_name not in fields:
+            continue
+        value = getattr(payload, field_name)
+        clean_value = value.strip() if value else None
+        old_value = getattr(ticket, field_name)
+        if clean_value != old_value:
+            audit_before[field_name] = old_value
+            setattr(ticket, field_name, clean_value)
+            audit_after[field_name] = clean_value
+            changed.append(
+                f'{label} de "{old_value or "não informado"}" para '
+                f'"{clean_value or "não informado"}"'
+            )
+
+    if not changed:
+        raise HTTPException(status_code=409, detail="Nenhuma alteração informada")
+
+    content = "Metadados atualizados: " + "; ".join(changed) + "."
+    event = Comment(
+        ticket_id=ticket.id,
+        author_id=current_user.id,
+        content=content,
+        is_system=True,
+        is_internal=False,
+    )
+    db.add(event)
+    db.flush()
+    touch_ticket(ticket)
+    record_event(
+        db,
+        "ticket.metadata.changed",
+        actor=current_user,
+        ticket=ticket,
+        summary="Dados operacionais da demanda alterados.",
+        changes={
+            "before": audit_before,
+            "after": audit_after,
+            "comment_id": event.id,
+        },
+        source="api",
+    )
+    db.commit()
+    db.refresh(event)
     return _serialize_comment(event)

@@ -4,8 +4,8 @@ main.py
 Ponto de entrada do GeoDemandas Brandt.
 
 - Inicializa o banco (cria tabelas e semeia usuários em DEV_MODE).
-- Sobe o worker de e-mail como task de background via lifespan.
-- Registra os routers (web + api) e a SessionMiddleware.
+- Sobe os workers de ingestao, outbox e alertas de SLA via lifespan.
+- Registra os routers web, API e operacoes e a SessionMiddleware.
 
 Como rodar localmente:
     1) python -m venv .venv && .venv\\Scripts\\activate   (Windows)
@@ -34,8 +34,13 @@ from auth import get_optional_user
 from config import settings
 from database import init_db
 from email_worker import email_worker_loop, stop_worker
-from routes import api, web
+from outbox_service import (
+    notification_outbox_worker_loop,
+    stop_notification_outbox_worker,
+)
+from routes import api, operations, web
 from routes.web import templates
+from sla_monitor import sla_alert_worker_loop, stop_sla_alert_worker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,27 +54,38 @@ async def lifespan(app: FastAPI):
     # --- startup ---
     logger.info("Inicializando GeoDemandas Brandt...")
     init_db()
-    worker_task = asyncio.create_task(email_worker_loop())
+    worker_tasks = [
+        asyncio.create_task(email_worker_loop()),
+        asyncio.create_task(notification_outbox_worker_loop()),
+        asyncio.create_task(sla_alert_worker_loop()),
+    ]
     yield
     # --- shutdown ---
-    logger.info("Encerrando worker de e-mail...")
+    logger.info("Encerrando workers de e-mail, notificações e SLA...")
     stop_worker()
-    worker_task.cancel()
-    try:
-        await worker_task
-    except asyncio.CancelledError:
-        pass
+    stop_notification_outbox_worker()
+    stop_sla_alert_worker()
+    for worker_task in worker_tasks:
+        worker_task.cancel()
+    await asyncio.gather(*worker_tasks, return_exceptions=True)
 
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Sessão assinada (cookie) para autenticação da plataforma web.
-app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY, max_age=60 * 60 * 8)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    max_age=60 * 60 * 8,
+    same_site="lax",
+    https_only=settings.APP_BASE_URL.lower().startswith("https://"),
+)
 
 # Rotas
 app.include_router(web.router)
 app.include_router(api.router)
+app.include_router(operations.router)
 
 
 # --------------------------------------------------------------------------
