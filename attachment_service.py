@@ -23,6 +23,8 @@ def save_uploads(
     comment: Comment | None = None,
 ) -> list[Attachment]:
     valid_uploads = [upload for upload in uploads if upload.filename]
+    if not valid_uploads:
+        return []
     if len(valid_uploads) > settings.MAX_ATTACHMENTS_PER_MESSAGE:
         raise HTTPException(
             status_code=400,
