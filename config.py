@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     # Lista os projetos ativos que podem ser vinculados a uma demanda.
     # O endpoint exige o token no header "x-token".
     PROJETOS_API_URL: str = "http://69.64.32.23:8000/projetos"
-    PROJETOS_API_TOKEN: str = "meu_token_secreto"
+    PROJETOS_API_TOKEN: str = ""
     PROJETOS_API_TIMEOUT: int = 10
     PROJETOS_CACHE_TTL: int = 300
 
