@@ -483,6 +483,8 @@ def dashboard(
     queue: str | None = None,
     status: str | None = None,
     priority: str | None = None,
+    category: str | None = None,
+    hub: str | None = None,
     page: int = 1,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -493,6 +495,8 @@ def dashboard(
     search_query = (q or "").strip()[:200]
     active_status = _parse_status(status)
     active_priority = _parse_priority(priority)
+    active_category = (category or "").strip()[:120]
+    active_hub = (hub or "").strip()[:255]
     allowed_queues = {
         "all",
         "mine",
@@ -564,6 +568,10 @@ def dashboard(
         query = query.filter(Ticket.status == active_status)
     if active_priority:
         query = query.filter(Ticket.priority == active_priority)
+    if active_category:
+        query = query.filter(Ticket.category == active_category)
+    if active_hub:
+        query = query.filter(Ticket.hub == active_hub)
     if search_query:
         pattern = f"%{search_query}%"
         query = query.join(User, Ticket.requester_id == User.id).filter(
@@ -660,6 +668,10 @@ def dashboard(
             "active_queue": active_queue,
             "active_status": active_status.value if active_status else None,
             "active_priority": active_priority.value if active_priority else None,
+            "active_category": active_category,
+            "active_hub": active_hub,
+            "category_options": [row[0] for row in db.query(Ticket.category).filter(Ticket.category.is_not(None)).distinct().order_by(Ticket.category).all()],
+            "hub_options": [row[0] for row in db.query(Ticket.hub).filter(Ticket.hub.is_not(None)).distinct().order_by(Ticket.hub).all()],
             "search_query": search_query,
             "status_options": list(TicketStatus),
             "priority_options": list(TicketPriority),

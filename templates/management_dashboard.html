@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Indicadores gerenciais · GeoDemandas{% endblock %}
+{% block content %}
+<div class="space-y-7">
+  <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div><p class="text-xs font-black uppercase tracking-[.18em] text-brandt">Gestão e desempenho</p><h1 class="mt-2 text-3xl font-black tracking-tight text-slate-950">Indicadores gerenciais</h1><p class="mt-2 text-sm font-medium text-slate-600">SLA, velocidade e distribuição das demandas no recorte selecionado.</p></div>
+    <div class="flex flex-wrap gap-2"><a class="btn-secondary" href="/admin/demandas/exportar?format=csv&amp;status={{ filters.status|urlencode }}&amp;priority={{ filters.priority|urlencode }}&amp;category={{ filters.category|urlencode }}&amp;hub={{ filters.hub|urlencode }}">Exportar CSV</a><a class="btn-premium" href="/admin/demandas/exportar?format=xlsx&amp;status={{ filters.status|urlencode }}&amp;priority={{ filters.priority|urlencode }}&amp;category={{ filters.category|urlencode }}&amp;hub={{ filters.hub|urlencode }}">Exportar XLSX</a></div>
+  </header>
+  <form class="premium-card grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-5" method="get" aria-label="Filtros dos indicadores">
+    <div><label class="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500" for="indicator-status">Status</label><select class="field-premium" id="indicator-status" name="status"><option value="">Todos</option>{% for item in status_options %}<option value="{{ item.value }}" {% if filters.status == item.value %}selected{% endif %}>{{ item.value }}</option>{% endfor %}</select></div>
+    <div><label class="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500" for="indicator-priority">Prioridade</label><select class="field-premium" id="indicator-priority" name="priority"><option value="">Todas</option>{% for item in priority_options %}<option value="{{ item.value }}" {% if filters.priority == item.value %}selected{% endif %}>{{ item.value }}</option>{% endfor %}</select></div>
+    <div><label class="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500" for="indicator-category">Categoria</label><select class="field-premium" id="indicator-category" name="category"><option value="">Todas</option>{% for item in categories %}<option value="{{ item }}" {% if filters.category == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+    <div><label class="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500" for="indicator-hub">Hub</label><select class="field-premium" id="indicator-hub" name="hub"><option value="">Todos</option>{% for item in hubs %}<option value="{{ item }}" {% if filters.hub == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+    <div class="flex items-end gap-2"><a href="/admin/indicadores" class="btn-secondary flex-1">Limpar</a><button class="btn-premium flex-1" type="submit">Aplicar</button></div>
+  </form>
+  <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Resumo dos indicadores">
+    {% set cards = [('Demandas', metrics.total, 'no recorte'), ('SLA 1ª resposta', (metrics.first_sla|string + '%') if metrics.first_sla is not none else '—', 'com prazo medido'), ('SLA resolução', (metrics.resolution_sla|string + '%') if metrics.resolution_sla is not none else '—', 'com prazo medido'), ('Tempo 1ª resposta', (metrics.first_hours|string + ' h') if metrics.first_hours is not none else '—', 'média'), ('Tempo de resolução', (metrics.resolution_hours|string + ' h') if metrics.resolution_hours is not none else '—', 'média')] %}
+    {% for label, value, helper in cards %}<article class="premium-card p-5"><p class="text-xs font-black uppercase tracking-wider text-slate-500">{{ label }}</p><p class="mt-4 font-mono text-3xl font-black tabular-nums text-slate-950">{{ value }}</p><p class="mt-2 text-xs font-semibold text-slate-500">{{ helper }}</p></article>{% endfor %}
+  </section>
+  <section class="grid gap-5 lg:grid-cols-2" aria-label="Distribuições">
+    {% for title, values in [('Volume por mês', by_month), ('Categorias', by_category), ('Hubs', by_hub), ('Solicitantes', by_requester)] %}<article class="premium-card p-5"><h2 class="text-base font-black text-slate-900">{{ title }}</h2><div class="mt-4 space-y-3">{% for label, value in values %}<div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3"><span class="truncate text-sm font-semibold text-slate-700">{{ label }}</span><span class="font-mono text-sm font-black tabular-nums text-brandt">{{ value }}</span></div>{% else %}<p class="text-sm text-slate-500">Sem dados neste recorte.</p>{% endfor %}</div></article>{% endfor %}
+  </section>
+</div>
+{% endblock %}

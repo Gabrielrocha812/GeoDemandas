@@ -40,6 +40,7 @@
       <p class="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-500">Acompanhe prioridades, responsáveis e o ritmo da operação em uma visão inteligente.</p>
     </div>
     <div class="flex flex-wrap items-center gap-3">
+      <a href="/admin/demandas/exportar?format=xlsx&amp;status={{ active_status|default('', true)|urlencode }}&amp;priority={{ active_priority|default('', true)|urlencode }}&amp;category={{ active_category|default('', true)|urlencode }}&amp;hub={{ active_hub|default('', true)|urlencode }}" class="btn-secondary">Exportar XLSX</a>
       <a href="/demandas/nova" class="btn-premium shine">
         <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m7-7H5"/></svg>
         Nova demanda
@@ -106,7 +107,7 @@
         </div>
       </fieldset>
 
-      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <div class="md:col-span-2">
           <label for="dashboard-search" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Buscar demanda</label>
           <div class="relative">
@@ -130,6 +131,14 @@
             <option value="{{ option.value }}" {% if active_status == option.value %}selected{% endif %}>{{ option.value }}</option>
             {% endfor %}
           </select>
+        </div>
+        <div>
+          <label for="dashboard-category" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Categoria</label>
+          <select id="dashboard-category" name="category" class="field-premium cursor-pointer"><option value="">Todas as categorias</option>{% for option in category_options %}<option value="{{ option }}" {% if active_category == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+        </div>
+        <div>
+          <label for="dashboard-hub" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Hub</label>
+          <select id="dashboard-hub" name="hub" class="field-premium cursor-pointer"><option value="">Todos os hubs</option>{% for option in hub_options %}<option value="{{ option }}" {% if active_hub == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
         </div>
         <div>
           <label for="dashboard-priority" class="mb-2 block text-xs font-black uppercase tracking-[.12em] text-slate-500">Prioridade</label>
@@ -204,7 +213,7 @@
         {% elif queue_empty %}
         <h2 class="mt-6 text-xl font-black text-slate-900">{{ queue_empty[0] }}</h2>
         <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">{{ queue_empty[1] }}</p>
-        {% elif active_status or active_priority %}
+        {% elif active_status or active_priority or active_category or active_hub %}
         <h2 class="mt-6 text-xl font-black text-slate-900">Nenhuma demanda neste recorte</h2>
         <p class="mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">Ajuste o status ou a prioridade para ampliar os resultados da fila.</p>
         {% else %}
@@ -226,7 +235,7 @@
     <div class="flex items-center gap-2">
       {% if page > 1 %}
       <a
-        href="/?q={{ search_query|default('', true)|urlencode }}&amp;queue={{ active_queue|default('all', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;priority={{ active_priority|default('', true)|urlencode }}&amp;page={{ page - 1 }}"
+        href="/?q={{ search_query|default('', true)|urlencode }}&amp;queue={{ active_queue|default('all', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;priority={{ active_priority|default('', true)|urlencode }}&amp;category={{ active_category|default('', true)|urlencode }}&amp;hub={{ active_hub|default('', true)|urlencode }}&amp;page={{ page - 1 }}"
         class="btn-secondary min-w-[112px]"
         rel="prev"
       >
@@ -242,7 +251,7 @@
 
       {% if page < total_pages %}
       <a
-        href="/?q={{ search_query|default('', true)|urlencode }}&amp;queue={{ active_queue|default('all', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;priority={{ active_priority|default('', true)|urlencode }}&amp;page={{ page + 1 }}"
+        href="/?q={{ search_query|default('', true)|urlencode }}&amp;queue={{ active_queue|default('all', true)|urlencode }}&amp;status={{ active_status|default('', true)|urlencode }}&amp;priority={{ active_priority|default('', true)|urlencode }}&amp;category={{ active_category|default('', true)|urlencode }}&amp;hub={{ active_hub|default('', true)|urlencode }}&amp;page={{ page + 1 }}"
         class="btn-secondary min-w-[112px]"
         rel="next"
       >

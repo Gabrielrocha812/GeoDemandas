@@ -38,7 +38,7 @@ from outbox_service import (
     notification_outbox_worker_loop,
     stop_notification_outbox_worker,
 )
-from routes import api, operations, web
+from routes import api, management, operations, web
 from routes.web import templates
 from sla_monitor import sla_alert_worker_loop, stop_sla_alert_worker
 
@@ -86,6 +86,7 @@ app.add_middleware(
 app.include_router(web.router)
 app.include_router(api.router)
 app.include_router(operations.router)
+app.include_router(management.router)
 
 
 # --------------------------------------------------------------------------

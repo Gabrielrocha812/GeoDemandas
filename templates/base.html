@@ -97,6 +97,10 @@
           </a>
           {% endif %}
           {% if current_user and current_user.role == 'administrador' %}
+          <a href="/admin/indicadores" title="Indicadores gerenciais" class="nav-link {% if request.url.path.startswith('/admin/indicadores') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19V9m5 10V5m5 14v-7m5 7V3M3 21h18"/></svg>
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Indicadores</span>
+          </a>
           <a href="/admin/operacao" title="Operações e confiabilidade" class="nav-link {% if request.url.path.startswith('/admin/operacao') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19V9m5 10V5m5 14v-7m5 7V3M3 21h18"/></svg>
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Operações</span>
