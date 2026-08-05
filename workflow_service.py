@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from config import settings
+from business_time import add_business_hours, business_hours_between
 from database import Ticket, TicketPriority, TicketStatus, utcnow
 
 
@@ -99,12 +100,12 @@ def initialize_sla(
     base = ticket.created_at or now
     ticket.last_activity_at = ticket.last_activity_at or base
     if reset or ticket.first_response_due_at is None:
-        ticket.first_response_due_at = base + timedelta(
-            hours=_first_response_hours(ticket.priority)
+        ticket.first_response_due_at = add_business_hours(
+            base, _first_response_hours(ticket.priority)
         )
     if reset or ticket.resolution_due_at is None:
-        ticket.resolution_due_at = base + timedelta(
-            hours=_resolution_hours(ticket.priority)
+        ticket.resolution_due_at = add_business_hours(
+            base, _resolution_hours(ticket.priority)
         )
 
 
@@ -145,14 +146,19 @@ def _requires_note(new_status: TicketStatus) -> bool:
 def _resume_sla(ticket: Ticket, now: datetime) -> None:
     if ticket.sla_paused_at is None:
         return
-    paused_for = now - ticket.sla_paused_at
     if (
         ticket.first_response_at is None
         and ticket.first_response_due_at is not None
     ):
-        ticket.first_response_due_at += paused_for
+        remaining = business_hours_between(
+            ticket.sla_paused_at, ticket.first_response_due_at
+        )
+        ticket.first_response_due_at = add_business_hours(now, remaining)
     if ticket.resolution_due_at is not None:
-        ticket.resolution_due_at += paused_for
+        remaining = business_hours_between(
+            ticket.sla_paused_at, ticket.resolution_due_at
+        )
+        ticket.resolution_due_at = add_business_hours(now, remaining)
     ticket.sla_paused_at = None
 
 
@@ -202,8 +208,8 @@ def transition_ticket(
         ticket.resolved_at = None
         ticket.closed_at = None
         ticket.sla_paused_at = None
-        ticket.resolution_due_at = now + timedelta(
-            hours=_resolution_hours(ticket.priority)
+        ticket.resolution_due_at = add_business_hours(
+            now, _resolution_hours(ticket.priority)
         )
     elif new_status == TicketStatus.CANCELADO:
         ticket.closed_at = now
@@ -238,8 +244,8 @@ def handle_requester_reply(
         ticket.resolved_at = None
         ticket.closed_at = None
         ticket.sla_paused_at = None
-        ticket.resolution_due_at = now + timedelta(
-            hours=_resolution_hours(ticket.priority)
+        ticket.resolution_due_at = add_business_hours(
+            now, _resolution_hours(ticket.priority)
         )
     else:
         touch_ticket(ticket, now=now)
@@ -273,6 +279,6 @@ def sla_snapshot(ticket: Ticket, *, now: datetime | None = None) -> dict:
         return {"state": "unknown", "label": "SLA não calculado", "due_at": None}
     if due_at <= now:
         return {"state": "overdue", "label": "SLA vencido", "due_at": due_at}
-    if due_at <= now + timedelta(hours=settings.SLA_RISK_WINDOW_HOURS):
+    if due_at <= add_business_hours(now, settings.SLA_RISK_WINDOW_HOURS):
         return {"state": "risk", "label": "SLA em risco", "due_at": due_at}
     return {"state": "ok", "label": "Dentro do SLA", "due_at": due_at}

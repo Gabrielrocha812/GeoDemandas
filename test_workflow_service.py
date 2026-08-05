@@ -4,6 +4,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta
 
+from business_time import add_business_hours, business_hours_between
 from database import Ticket, TicketPriority, TicketStatus
 from workflow_service import (
     WorkflowError,
@@ -89,6 +90,12 @@ class WorkflowTransitionTests(unittest.TestCase):
             now=start + timedelta(hours=2),
         )
         self.assertEqual(ticket.sla_paused_at, start + timedelta(hours=2))
+        first_remaining = business_hours_between(
+            ticket.sla_paused_at, original_first_due
+        )
+        resolution_remaining = business_hours_between(
+            ticket.sla_paused_at, original_due
+        )
 
         event = handle_requester_reply(
             ticket,
@@ -98,17 +105,17 @@ class WorkflowTransitionTests(unittest.TestCase):
         self.assertEqual(ticket.status, TicketStatus.EM_ANDAMENTO)
         self.assertIsNone(ticket.sla_paused_at)
         self.assertEqual(
-            ticket.resolution_due_at,
-            original_due + timedelta(hours=5),
+            business_hours_between(start + timedelta(hours=7), ticket.resolution_due_at),
+            resolution_remaining,
         )
         self.assertEqual(
-            ticket.first_response_due_at,
-            original_first_due + timedelta(hours=5),
+            business_hours_between(start + timedelta(hours=7), ticket.first_response_due_at),
+            first_remaining,
         )
         self.assertIn("Resposta do solicitante", event or "")
 
     def test_requester_reply_reopens_a_resolved_ticket(self) -> None:
-        start = datetime(2026, 7, 29, 9, 0)
+        start = datetime(2026, 7, 29, 12, 0)
         ticket = _ticket(status=TicketStatus.EM_ANDAMENTO, now=start)
         transition_ticket(
             ticket,
@@ -156,7 +163,7 @@ class WorkflowTransitionTests(unittest.TestCase):
 
 class SlaSnapshotTests(unittest.TestCase):
     def test_snapshot_distinguishes_risk_and_overdue(self) -> None:
-        start = datetime(2026, 7, 29, 9, 0)
+        start = datetime(2026, 7, 29, 12, 0)
         ticket = _ticket(
             priority=TicketPriority.URGENTE,
             now=start,
@@ -167,6 +174,19 @@ class SlaSnapshotTests(unittest.TestCase):
 
         self.assertEqual(at_risk["state"], "risk")
         self.assertEqual(overdue["state"], "overdue")
+
+
+class BusinessCalendarTests(unittest.TestCase):
+    def test_friday_evening_deadline_moves_to_monday(self) -> None:
+        # 21h UTC = 18h em São Paulo.
+        friday_evening = datetime(2026, 7, 31, 21, 0)
+        due = add_business_hours(friday_evening, 8)
+        self.assertEqual(due, datetime(2026, 8, 3, 19, 0))
+
+    def test_weekend_is_not_counted_in_elapsed_indicator(self) -> None:
+        friday = datetime(2026, 7, 31, 20, 0)  # 17h local
+        monday = datetime(2026, 8, 3, 12, 0)  # 9h local
+        self.assertEqual(business_hours_between(friday, monday), 2.0)
 
 
 if __name__ == "__main__":

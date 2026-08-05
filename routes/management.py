@@ -12,6 +12,7 @@ from openpyxl import Workbook
 from sqlalchemy.orm import Session, joinedload
 
 from auth import ROLE_ADMIN, ROLE_TECHNICIAN, require_roles
+from business_time import business_hours_between
 from database import Ticket, TicketPriority, TicketStatus, User, get_db
 from routes.web import templates
 from time_utils import format_local_datetime
@@ -43,7 +44,7 @@ def _filtered_tickets(
 def _hours(end: datetime | None, start: datetime | None) -> float | None:
     if not end or not start:
         return None
-    return max(0.0, (end - start).total_seconds() / 3600)
+    return business_hours_between(start, end)
 
 
 @router.get("/admin/indicadores", response_class=HTMLResponse)

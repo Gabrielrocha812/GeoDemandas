@@ -21,6 +21,7 @@ with patch.dict(
     },
 ):
     from auth import get_current_user
+    from business_time import add_business_hours
     from database import (
         AuditEvent,
         Base,
@@ -73,7 +74,7 @@ class OperationsRoutesTests(unittest.TestCase):
             requester_id=requester.id,
             assignee_id=None,
             subject="Demanda em risco",
-            due_at=now + timedelta(hours=1),
+            due_at=add_business_hours(now, 1),
         )
         overdue_ticket = self._ticket(
             requester_id=requester.id,
@@ -85,7 +86,7 @@ class OperationsRoutesTests(unittest.TestCase):
             requester_id=requester.id,
             assignee_id=None,
             subject="Demanda dentro do prazo",
-            due_at=now + timedelta(hours=12),
+            due_at=add_business_hours(now, 12),
         )
         db.add_all([risk_ticket, overdue_ticket, healthy_ticket])
         db.flush()

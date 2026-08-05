@@ -47,7 +47,7 @@ class ManagementTests(unittest.TestCase):
 
     def test_elapsed_hours_never_returns_negative_values(self) -> None:
         start = datetime(2026, 1, 1, 10)
-        self.assertEqual(_hours(datetime(2026, 1, 1, 12), start), 2.0)
+        self.assertEqual(_hours(datetime(2026, 1, 1, 12), start), 1.0)
         self.assertEqual(_hours(datetime(2026, 1, 1, 9), start), 0.0)
 
 

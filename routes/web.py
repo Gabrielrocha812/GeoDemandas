@@ -35,6 +35,7 @@ from auth import (
 )
 from attachment_service import delete_saved_uploads, save_uploads
 from config import settings
+from business_time import add_business_hours
 from database import Ticket, TicketPriority, TicketStatus, User, get_db, utcnow
 from ldap_auth import LDAPOperationalError, authenticate, list_active_ldap_users
 from outbox_service import enqueue_ticket_received
@@ -507,7 +508,7 @@ def dashboard(
     }
     active_queue = queue if queue in allowed_queues else "all"
     now = utcnow()
-    risk_limit = now + timedelta(hours=settings.SLA_RISK_WINDOW_HOURS)
+    risk_limit = add_business_hours(now, settings.SLA_RISK_WINDOW_HOURS)
     active_workflow_statuses = [
         item for item in TicketStatus if item not in RESOLUTION_STATUSES
     ]

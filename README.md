@@ -94,7 +94,9 @@ GeoDemandas/
 - Notas internas e seus anexos ficam restritos a técnicos e administradores e
   não disparam notificação ao solicitante.
 - Os prazos de primeira resposta e resolução são configurados pelas variáveis
-  `SLA_*`; o prazo de resolução fica pausado enquanto se aguarda o solicitante.
+  `SLA_*` e contam somente de segunda a sexta, dentro da jornada definida por
+  `SLA_BUSINESS_START_HOUR` e `SLA_BUSINESS_END_HOUR`; o prazo de resolução
+  fica pausado enquanto se aguarda o solicitante.
 - O worker IMAP só marca uma mensagem como lida após sucesso, duplicidade já
   processada ou rejeição definitiva. Falhas temporárias de LDAP/banco ficam na
   caixa para nova tentativa.

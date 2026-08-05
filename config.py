@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./geodemandas.db"
 
     # --- SLA operacional (horas corridas; calendário útil entra na próxima etapa) ---
+    SLA_BUSINESS_START_HOUR: int = 8
+    SLA_BUSINESS_END_HOUR: int = 18
     SLA_FIRST_RESPONSE_HOURS_BAIXA: int = 24
     SLA_FIRST_RESPONSE_HOURS_MEDIA: int = 8
     SLA_FIRST_RESPONSE_HOURS_ALTA: int = 4

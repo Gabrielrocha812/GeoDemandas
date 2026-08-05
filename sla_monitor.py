@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session, joinedload
 
 from audit_service import record_event
+from business_time import add_business_hours
 from auth import ROLE_ADMIN
 from config import settings
 from database import (
@@ -161,7 +162,7 @@ def process_sla_alerts(
         if risk_window_minutes is None
         else max(0, int(risk_window_minutes))
     )
-    risk_limit = current + timedelta(minutes=window_minutes)
+    risk_limit = add_business_hours(current, window_minutes / 60)
     counts = {
         "tickets_scanned": 0,
         "queued": 0,
