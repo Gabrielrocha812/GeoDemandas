@@ -44,6 +44,46 @@ def _fake_ldap_modules() -> dict[str, ModuleType]:
 
 
 class EmailWorkerResultTests(unittest.TestCase):
+    def test_reply_headers_and_attachments_are_forwarded(self) -> None:
+        msg = EmailMessage()
+        msg["From"] = "usuario@brandt.com.br"
+        msg["Subject"] = "Re: Demanda #0012"
+        msg["Message-ID"] = "<reply@brandt.com.br>"
+        msg["In-Reply-To"] = "<original@brandt.com.br>"
+        msg["References"] = "<older@brandt.com.br> <original@brandt.com.br>"
+        msg.set_content("Segue o print.")
+        msg.add_attachment(
+            b"imagem", maintype="image", subtype="png", filename="erro.png"
+        )
+
+        with patch.object(
+            email_worker,
+            "_create_ticket_from_email",
+            return_value=email_worker.EmailProcessingResult.SUCCESS,
+        ) as process:
+            result = email_worker._handle_message(msg)
+
+        self.assertIs(result, email_worker.EmailProcessingResult.SUCCESS)
+        kwargs = process.call_args.kwargs
+        self.assertEqual(kwargs["in_reply_to"], "<original@brandt.com.br>")
+        self.assertIn("<older@brandt.com.br>", kwargs["references"])
+        self.assertEqual(kwargs["attachments"][0].filename, "erro.png")
+        self.assertEqual(kwargs["attachments"][0].content_type, "image/png")
+
+    def test_ticket_token_resolves_existing_thread(self) -> None:
+        db = MagicMock()
+        ticket = object()
+        db.query.return_value.filter.return_value.first.return_value = ticket
+
+        result = email_worker._find_thread_ticket(
+            db,
+            "Re: Atualização na demanda #0123",
+            in_reply_to=None,
+            references=None,
+        )
+
+        self.assertIs(result, ticket)
+
     def test_message_without_id_receives_a_stable_fingerprint(self) -> None:
         msg = EmailMessage()
         msg["From"] = "usuario@brandt.com.br"
@@ -170,7 +210,9 @@ class EmailWorkerResultTests(unittest.TestCase):
         )
         db.query.return_value.filter.return_value.first.side_effect = [
             None,
+            None,
             existing_user,
+            None,
         ]
         db.refresh.side_effect = lambda ticket: setattr(ticket, "id", 42)
         ad_user = {

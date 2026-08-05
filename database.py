@@ -192,6 +192,9 @@ class Comment(Base):
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
     # Notas internas ficam visíveis apenas para técnico/administrador.
     is_internal: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_message_id: Mapped[str | None] = mapped_column(
+        String(500), unique=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     ticket: Mapped["Ticket"] = relationship(back_populates="comments")
@@ -351,6 +354,7 @@ def init_db() -> None:
     _ensure_ticket_project_columns()
     _ensure_ticket_workflow_columns()
     _ensure_comment_visibility_column()
+    _ensure_comment_email_thread_column()
     _ensure_notification_outbox_schema()
     _ensure_ticket_workflow_indexes()
     _backfill_ticket_workflow_data()
@@ -459,6 +463,24 @@ def _ensure_comment_visibility_column() -> None:
             text(
                 "ALTER TABLE comments ADD COLUMN is_internal "
                 f"{boolean_type} NOT NULL DEFAULT {boolean_default}"
+            )
+        )
+
+
+def _ensure_comment_email_thread_column() -> None:
+    """Adiciona idempotência para respostas recebidas por e-mail."""
+    columns = {column["name"] for column in inspect(engine).get_columns("comments")}
+    with engine.begin() as conn:
+        if "source_message_id" not in columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE comments ADD COLUMN source_message_id VARCHAR(500)"
+                )
+            )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "ux_comments_source_message_id ON comments (source_message_id)"
             )
         )
 

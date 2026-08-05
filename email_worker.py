@@ -24,17 +24,21 @@ from __future__ import annotations
 import asyncio
 import email
 import hashlib
+import io
 import logging
+import re
 from enum import Enum
 from email.header import decode_header
 from email.utils import parseaddr
 
 from audit_service import record_event
+from attachment_service import delete_saved_uploads, save_uploads
 from config import settings
-from database import SessionLocal, Ticket, TicketPriority, TicketStatus, User
+from database import Comment, SessionLocal, Ticket, TicketPriority, TicketStatus, User
+from fastapi import UploadFile
 from ldap_auth import LDAPOperationalError, validate_sender
-from outbox_service import enqueue_ticket_received
-from workflow_service import initialize_sla
+from outbox_service import enqueue_ticket_received, enqueue_ticket_update
+from workflow_service import handle_requester_reply, initialize_sla
 
 logger = logging.getLogger("geodemandas.worker")
 
@@ -213,12 +217,26 @@ def _handle_message(msg: email.message.Message) -> EmailProcessingResult:
         digest = hashlib.sha256(msg.as_bytes()).hexdigest()
         message_id = f"<sha256-{digest}@geodemandas.local>"
     body = _extract_body(msg)
-
-    return _create_ticket_from_email(sender_email, subject, body, message_id)
+    return _create_ticket_from_email(
+        sender_email,
+        subject,
+        body,
+        message_id,
+        in_reply_to=msg.get("In-Reply-To"),
+        references=msg.get("References"),
+        attachments=_extract_attachments(msg),
+    )
 
 
 def _create_ticket_from_email(
-    sender_email: str, subject: str, body: str, message_id: str | None
+    sender_email: str,
+    subject: str,
+    body: str,
+    message_id: str | None,
+    *,
+    in_reply_to: str | None = None,
+    references: str | None = None,
+    attachments: list[UploadFile] | None = None,
 ) -> EmailProcessingResult:
     """Valida o remetente e retorna um resultado explícito do processamento."""
     # 1) Validação no Active Directory
@@ -248,13 +266,19 @@ def _create_ticket_from_email(
     db = None
     ticket = None
     user = None
+    saved_attachments = []
     try:
         db = SessionLocal()
 
         # 2) Evita duplicidade pelo Message-ID
         if message_id:
             exists = db.query(Ticket).filter(Ticket.source_message_id == message_id).first()
-            if exists:
+            existing_comment = (
+                db.query(Comment)
+                .filter(Comment.source_message_id == message_id)
+                .first()
+            )
+            if exists or existing_comment:
                 logger.info("E-mail já processado (Message-ID duplicado): %s", message_id)
                 return EmailProcessingResult.SUCCESS
 
@@ -271,6 +295,67 @@ def _create_ticket_from_email(
             db.add(user)
             db.flush()  # garante user.id
 
+        thread_ticket = _find_thread_ticket(
+            db, subject, in_reply_to=in_reply_to, references=references
+        )
+        if thread_ticket is not None:
+            if thread_ticket.requester_id != user.id:
+                logger.warning(
+                    "Resposta por e-mail rejeitada: remetente sem acesso Ã  demanda #%s",
+                    thread_ticket.id,
+                )
+                return EmailProcessingResult.PERMANENT_REJECTION
+            comment = Comment(
+                ticket_id=thread_ticket.id,
+                author_id=user.id,
+                content=body.strip() or "Anexo enviado por e-mail.",
+                is_system=False,
+                is_internal=False,
+                source_message_id=message_id,
+            )
+            db.add(comment)
+            db.flush()
+            saved_attachments = save_uploads(
+                db, thread_ticket, user, attachments or [], comment=comment
+            )
+            status_message = handle_requester_reply(thread_ticket)
+            record_event(
+                db,
+                "ticket.comment.public_added",
+                actor=user,
+                ticket=thread_ticket,
+                summary="Resposta recebida pela caixa de e-mail.",
+                changes={
+                    "comment_id": comment.id,
+                    "attachment_count": len(saved_attachments),
+                    "source_channel": "email",
+                },
+                source="imap",
+            )
+            if thread_ticket.assignee:
+                enqueue_ticket_update(
+                    db,
+                    thread_ticket.assignee.email,
+                    thread_ticket.assignee.full_name,
+                    thread_ticket.id,
+                    thread_ticket.subject,
+                    "O solicitante respondeu por e-mail.",
+                    dedupe_key=f"email-reply:{message_id}",
+                )
+            if status_message:
+                db.add(
+                    Comment(
+                        ticket_id=thread_ticket.id,
+                        author_id=user.id,
+                        content=status_message,
+                        is_system=True,
+                        is_internal=False,
+                    )
+                )
+            db.commit()
+            logger.info("Resposta anexada Ã  demanda #%s", thread_ticket.id)
+            return EmailProcessingResult.SUCCESS
+
         # 4) Cria o ticket
         ticket = Ticket(
             subject=subject.strip() or "(sem assunto)",
@@ -284,6 +369,7 @@ def _create_ticket_from_email(
         initialize_sla(ticket)
         db.add(ticket)
         db.flush()
+        saved_attachments = save_uploads(db, ticket, user, attachments or [])
         record_event(
             db,
             "ticket.created",
@@ -293,7 +379,7 @@ def _create_ticket_from_email(
                 "status": ticket.status,
                 "priority": ticket.priority,
                 "source_channel": ticket.source_channel,
-                "attachment_count": 0,
+                "attachment_count": len(saved_attachments),
             },
             source="imap",
             actor_type="worker",
@@ -321,6 +407,7 @@ def _create_ticket_from_email(
             "e-mail será tentado novamente",
             sender_email,
         )
+        delete_saved_uploads(saved_attachments)
         return EmailProcessingResult.TRANSIENT_FAILURE
     finally:
         if db is not None:
@@ -371,6 +458,51 @@ def _extract_body(msg: email.message.Message) -> str:
         charset = msg.get_content_charset() or "utf-8"
         return payload.decode(charset, errors="replace")
     return str(msg.get_payload())
+
+
+def _extract_attachments(msg: email.message.Message) -> list[UploadFile]:
+    """Converte anexos MIME para o serviÃ§o compartilhado de uploads."""
+    uploads: list[UploadFile] = []
+    if not msg.is_multipart():
+        return uploads
+    for part in msg.walk():
+        filename = part.get_filename()
+        if not filename or (part.get_content_disposition() or "").lower() != "attachment":
+            continue
+        uploads.append(
+            UploadFile(
+                filename=_decode_mime(filename),
+                file=io.BytesIO(part.get_payload(decode=True) or b""),
+                headers={"content-type": part.get_content_type()},
+            )
+        )
+    return uploads
+
+
+_TICKET_TOKEN_RE = re.compile(
+    r"\[#?(\d{1,10})\]|(?:demanda\s*)?#(\d{1,10})", re.IGNORECASE
+)
+_MESSAGE_ID_RE = re.compile(r"<[^>]+>")
+
+
+def _find_thread_ticket(
+    db, subject: str, *, in_reply_to: str | None, references: str | None
+) -> Ticket | None:
+    """Resolve a conversa por token no assunto ou cabeçalhos RFC 5322."""
+    match = _TICKET_TOKEN_RE.search(subject)
+    if match:
+        ticket_id = int(match.group(1) or match.group(2))
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        if ticket is not None:
+            return ticket
+    message_ids = _MESSAGE_ID_RE.findall(f"{in_reply_to or ''} {references or ''}")
+    if not message_ids:
+        return None
+    return (
+        db.query(Ticket)
+        .filter(Ticket.source_message_id.in_(message_ids))
+        .first()
+    )
 
 
 def _guess_priority(subject: str, body: str) -> TicketPriority:
