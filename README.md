@@ -112,6 +112,12 @@ GeoDemandas/
 - A auditoria é gravada na mesma transação da alteração e armazena apenas
   metadados estruturados; corpo da demanda, comentários, notas internas,
   credenciais e respostas brutas de integrações são rejeitados.
+- Em produção, use PostgreSQL, execute `alembic upgrade head` antes do restart
+  e separe web (`EMBEDDED_WORKERS=false`) do processo `worker_main.py`. Unidades
+  `systemd` de referência estão em `deploy/`.
+- Configure feriados em `SLA_HOLIDAYS` como datas ISO separadas por vírgula.
+- O catálogo administrativo oferece categorias e respostas prontas; demandas
+  finalizadas aceitam CSAT e a equipe pode executar transições em lote no Kanban.
 
 Para executar os testes automatizados:
 

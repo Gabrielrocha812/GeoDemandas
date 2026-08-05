@@ -7,6 +7,11 @@ from zoneinfo import ZoneInfo
 from config import settings
 
 
+def _is_business_day(value: datetime) -> bool:
+    holidays = {item.strip() for item in settings.SLA_HOLIDAYS.split(",") if item.strip()}
+    return value.weekday() < 5 and value.date().isoformat() not in holidays
+
+
 def _local(value: datetime) -> datetime:
     aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
     return aware.astimezone(ZoneInfo(settings.APP_TIMEZONE))
@@ -26,7 +31,7 @@ def _next_open(value: datetime) -> datetime:
     current = value
     while True:
         start, end = _bounds(current)
-        if current.weekday() < 5 and current < end:
+        if _is_business_day(current) and current < end:
             return max(current, start)
         current = (current + timedelta(days=1)).replace(hour=settings.SLA_BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
 
@@ -53,7 +58,7 @@ def business_hours_between(start: datetime, end: datetime) -> float:
     total = timedelta(0)
     day = local_start.replace(hour=0, minute=0, second=0, microsecond=0)
     while day.date() <= local_end.date():
-        if day.weekday() < 5:
+        if _is_business_day(day):
             open_at, close_at = _bounds(day)
             interval_start = max(local_start, open_at)
             interval_end = min(local_end, close_at)

@@ -10,11 +10,12 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from auth import ROLE_ADMIN, ROLE_TECHNICIAN, require_roles
 from business_time import business_hours_between
-from database import Ticket, TicketPriority, TicketStatus, User, get_db
+from database import SatisfactionRating, Ticket, TicketPriority, TicketStatus, User, get_db
 from routes.web import templates
 from time_utils import format_local_datetime
 
@@ -94,6 +95,8 @@ def management_dashboard(
     resolution_sla = [t.resolved_at <= t.resolution_due_at for t in tickets if t.resolved_at and t.resolution_due_at]
     by_month = Counter(t.created_at.strftime("%Y-%m") for t in tickets)
     by_requester = Counter(t.requester.full_name for t in tickets)
+    ticket_ids = [ticket.id for ticket in tickets]
+    csat = db.query(func.avg(SatisfactionRating.score), func.count(SatisfactionRating.id)).filter(SatisfactionRating.ticket_id.in_(ticket_ids)).one() if ticket_ids else (None, 0)
     return templates.TemplateResponse(request, "management_dashboard.html", {
         "current_user": current_user,
         "tickets": tickets,
@@ -108,6 +111,8 @@ def management_dashboard(
             "resolution_sla": round(100 * sum(resolution_sla) / len(resolution_sla), 1) if resolution_sla else None,
             "first_hours": round(sum(first_samples) / len(first_samples), 1) if first_samples else None,
             "resolution_hours": round(sum(resolution_samples) / len(resolution_samples), 1) if resolution_samples else None,
+            "csat": round(float(csat[0]), 1) if csat[0] is not None else None,
+            "csat_count": int(csat[1]),
         },
         "by_month": sorted(by_month.items(), reverse=True)[:12],
         "by_category": Counter(t.category or "Sem categoria" for t in tickets).most_common(8),

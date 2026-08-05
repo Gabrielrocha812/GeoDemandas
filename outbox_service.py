@@ -18,6 +18,7 @@ from audit_service import record_event
 from config import settings
 from database import NotificationOutbox, SessionLocal, utcnow
 import notification_service
+from operational_health import beat
 
 logger = logging.getLogger("geodemandas.outbox")
 
@@ -513,6 +514,7 @@ async def notification_outbox_worker_loop() -> None:
         settings.NOTIFICATION_OUTBOX_POLL_INTERVAL,
     )
     while _running:
+        beat("outbox")
         try:
             await asyncio.to_thread(process_outbox_batch)
         except Exception:  # noqa: BLE001 - o proximo ciclo deve continuar

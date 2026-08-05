@@ -1,0 +1,17 @@
+[Unit]
+Description=GeoDemandas Background Workers
+After=network-online.target geodemandas-web.service
+
+[Service]
+Type=simple
+User=geodemandas
+WorkingDirectory=/opt/geodemandas
+EnvironmentFile=/opt/geodemandas/.env
+ExecStart=/opt/geodemandas/.venv/bin/python worker_main.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

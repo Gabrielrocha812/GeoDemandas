@@ -11,7 +11,9 @@ from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
 from audit_service import record_event
+from business_time import add_business_hours
 from auth import ROLE_ADMIN, require_roles
+from config import settings
 from database import (
     AuditEvent,
     NotificationOutbox,
@@ -88,23 +90,25 @@ def _delivery_query(
 
 
 def _ticket_metrics(db: Session, now) -> tuple[int, int, int]:
-    active_tickets = (
-        db.query(Ticket)
-        .filter(Ticket.status.notin_(tuple(RESOLUTION_STATUSES)))
-        .all()
+    active = Ticket.status.notin_(tuple(RESOLUTION_STATUSES))
+    due_at = func.coalesce(
+        func.nullif(Ticket.first_response_at, Ticket.first_response_at),
+        Ticket.first_response_due_at,
+        Ticket.resolution_due_at,
     )
-    risk = 0
-    overdue = 0
-    unassigned = 0
-    for ticket in active_tickets:
-        if ticket.assignee_id is None:
-            unassigned += 1
-        state = sla_snapshot(ticket, now=now)["state"]
-        if state == "risk":
-            risk += 1
-        elif state == "overdue":
-            overdue += 1
-    return risk, overdue, unassigned
+    # CASE explícito: antes da primeira resposta vale o primeiro prazo;
+    # depois dela, o prazo de resolução.
+    from sqlalchemy import case
+    due_at = case(
+        (Ticket.first_response_at.is_(None), Ticket.first_response_due_at),
+        else_=Ticket.resolution_due_at,
+    )
+    risk_limit = add_business_hours(now, settings.SLA_RISK_WINDOW_HOURS)
+    base = db.query(func.count(Ticket.id)).filter(active, Ticket.sla_paused_at.is_(None))
+    overdue = base.filter(due_at.is_not(None), due_at <= now).scalar() or 0
+    risk = base.filter(due_at.is_not(None), due_at > now, due_at <= risk_limit).scalar() or 0
+    unassigned = db.query(func.count(Ticket.id)).filter(active, Ticket.assignee_id.is_(None)).scalar() or 0
+    return int(risk), int(overdue), int(unassigned)
 
 
 def _daily_delivery_series(db: Session, now) -> list[SimpleNamespace]:

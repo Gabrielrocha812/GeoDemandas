@@ -43,6 +43,9 @@ def save_uploads(
     try:
         for upload in valid_uploads:
             original_name = _safe_original_name(upload.filename or "arquivo")
+            blocked = {item.strip().lower() for item in settings.BLOCKED_ATTACHMENT_EXTENSIONS.split(",") if item.strip()}
+            if Path(original_name).suffix.lower() in blocked:
+                raise HTTPException(status_code=415, detail=f'O tipo do arquivo "{original_name}" não é permitido.')
             stored_name = f"{ticket.id}/{uuid.uuid4().hex}"
             destination = (root / stored_name).resolve()
             if root not in destination.parents:

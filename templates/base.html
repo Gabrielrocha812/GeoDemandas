@@ -84,6 +84,7 @@
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m7-7H5"/></svg>
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Cadastrar demanda</span>
           </a>
+          <a href="/notificacoes" title="Notificações" class="nav-link {% if request.url.path == '/notificacoes' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span :class="sidebarCollapsed ? 'lg:hidden' : ''">Notificações</span></a>
           {% if not requester_home %}
           <a href="/minhas-demandas" title="Minhas demandas" class="nav-link {% if request.url.path == '/minhas-demandas' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M7 3h8l4 4v14H5V3h2zm8 0v5h5"/></svg>
@@ -108,6 +109,9 @@
           <a href="/admin/usuarios" title="Usuários e acessos" class="nav-link {% if request.url.path.startswith('/admin/usuarios') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8zm13 10v-2a4 4 0 00-3-3.87m-1-8a4 4 0 010 7.75"/></svg>
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Usuários e acessos</span>
+          </a>
+          <a href="/admin/catalogo" title="Catálogo de atendimento" class="nav-link {% if request.url.path.startswith('/admin/catalogo') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/></svg><span :class="sidebarCollapsed ? 'lg:hidden' : ''">Catálogo</span>
           </a>
           {% endif %}
         </nav>

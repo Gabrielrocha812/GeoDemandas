@@ -38,6 +38,7 @@ from database import Comment, SessionLocal, Ticket, TicketPriority, TicketStatus
 from fastapi import UploadFile
 from ldap_auth import LDAPOperationalError, validate_sender
 from outbox_service import enqueue_ticket_received, enqueue_ticket_update
+from operational_health import beat
 from workflow_service import handle_requester_reply, initialize_sla
 
 logger = logging.getLogger("geodemandas.worker")
@@ -79,6 +80,7 @@ async def email_worker_loop() -> None:
         await asyncio.to_thread(_process_mock_emails)
 
     while _running:
+        beat("email")
         try:
             if not settings.DEV_MODE:
                 # to_thread evita bloquear o event loop com imaplib síncrono.
@@ -308,7 +310,7 @@ def _create_ticket_from_email(
             comment = Comment(
                 ticket_id=thread_ticket.id,
                 author_id=user.id,
-                content=body.strip() or "Anexo enviado por e-mail.",
+                content=_clean_reply_body(body) or "Anexo enviado por e-mail.",
                 is_system=False,
                 is_internal=False,
                 source_message_id=message_id,
@@ -467,7 +469,7 @@ def _extract_attachments(msg: email.message.Message) -> list[UploadFile]:
         return uploads
     for part in msg.walk():
         filename = part.get_filename()
-        if not filename or (part.get_content_disposition() or "").lower() != "attachment":
+        if not filename or (part.get_content_disposition() or "").lower() not in {"attachment", "inline"}:
             continue
         uploads.append(
             UploadFile(
@@ -477,6 +479,20 @@ def _extract_attachments(msg: email.message.Message) -> list[UploadFile]:
             )
         )
     return uploads
+
+
+def _clean_reply_body(body: str) -> str:
+    """Remove histórico citado e assinaturas comuns sem alterar a mensagem original."""
+    kept = []
+    for line in body.replace("\r\n", "\n").split("\n"):
+        stripped = line.strip()
+        lowered = stripped.casefold()
+        if stripped == "--" or lowered.startswith("de:") or lowered.startswith("from:") or lowered.startswith("em ") and lowered.endswith(" escreveu:"):
+            break
+        if stripped.startswith(">"):
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
 
 
 _TICKET_TOKEN_RE = re.compile(

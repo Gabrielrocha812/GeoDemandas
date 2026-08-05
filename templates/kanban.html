@@ -65,6 +65,7 @@
   </header>
 
   <div class="kanban-feedback hidden rounded-2xl px-4 py-3 text-sm font-bold" role="status" aria-live="polite"></div>
+  <div class="premium-card flex flex-col gap-3 p-4 sm:flex-row sm:items-end" aria-label="Ações em lote"><div class="flex-1"><label for="bulk-status" class="mb-1 block text-xs font-black uppercase tracking-wider text-slate-500">Mover selecionadas para</label><select id="bulk-status" class="field-premium"><option value="">Selecione o status</option>{% for item in status_options %}<option value="{{ item.value }}">{{ item.value }}</option>{% endfor %}</select></div><div class="flex-1"><label for="bulk-note" class="mb-1 block text-xs font-black uppercase tracking-wider text-slate-500">Motivo, quando obrigatório</label><input id="bulk-note" class="field-premium" maxlength="2000"></div><button type="button" class="btn-premium kanban-bulk-apply">Aplicar em lote</button></div>
 
   <section class="kanban-grid" aria-label="Quadro Kanban de demandas">
     {% for column in columns %}
@@ -89,7 +90,7 @@
         >
           {% set ticket_sla = sla_by_ticket[ticket.id] %}
           <div class="flex items-start justify-between gap-3">
-            <span class="font-mono text-[11px] font-black tracking-wider text-slate-400">#{{ '%04d'|format(ticket.id) }}</span>
+            <label class="flex min-h-11 cursor-pointer items-center gap-2 text-xs font-bold text-slate-500"><input type="checkbox" class="kanban-select h-4 w-4 rounded" value="{{ ticket.id }}"><span class="font-mono text-[11px] font-black tracking-wider text-slate-400">#{{ '%04d'|format(ticket.id) }}</span></label>
             <span class="rounded-full px-2.5 py-1 text-[10px] font-extrabold {{ priority_styles.get(ticket.priority.value, '') }}">{{ ticket.priority.value }}</span>
           </div>
           <div class="mt-2">

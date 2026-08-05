@@ -30,6 +30,7 @@ from outbox_service import (
     EVENT_SLA_WARNING,
     enqueue_ticket_update,
 )
+from operational_health import beat
 
 logger = logging.getLogger("geodemandas.sla_monitor")
 
@@ -303,6 +304,7 @@ async def sla_alert_worker_loop(
 
     try:
         while _running:
+            beat("sla")
             try:
                 counts = await asyncio.to_thread(
                     process_sla_alerts,

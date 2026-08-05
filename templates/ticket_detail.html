@@ -311,6 +311,7 @@
         <!-- ==================== NOVO COMENTÁRIO ==================== -->
         <div class="mt-6 border-t border-slate-100 pt-6">
           <form @submit.prevent="submitComment()">
+            {% if is_staff and canned_responses %}<label for="canned-response" class="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500">Resposta pronta</label><select id="canned-response" class="field-premium mb-3 cursor-pointer" @change="if ($event.target.value) commentText = $event.target.value"><option value="">Selecionar resposta pronta</option>{% for item in canned_responses %}<option value="{{ item.content }}">{{ item.title }}</option>{% endfor %}</select>{% endif %}
             <textarea
               id="ticket-message"
               x-model="commentText"
@@ -449,6 +450,14 @@
           O prazo está pausado enquanto a equipe aguarda uma resposta do solicitante.
         </p>
       </div>
+
+      {% if current_user.id == ticket.requester_id and ticket.status.value in ['Resolvido', 'Concluído'] %}
+      <div class="premium-card p-6" x-data="{ score: {{ satisfaction.score if satisfaction else 0 }}, sent: {{ (satisfaction is not none)|tojson }}, async submit() { const response = await fetch('/api/tickets/{{ ticket.id }}/satisfaction', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({score:this.score})}); if(response.ok) this.sent=true; } }">
+        <h2 class="text-base font-black text-slate-900">Avalie o atendimento</h2><p class="mt-1 text-xs font-medium text-slate-500">Sua opinião ajuda a melhorar o serviço.</p>
+        <div class="mt-4 flex gap-2" x-show="!sent">{% for value in range(1,6) %}<button type="button" @click="score={{ value }}" class="flex h-11 w-11 items-center justify-center rounded-xl border text-lg font-black" :class="score >= {{ value }} ? 'border-amber-300 bg-amber-50 text-amber-600' : 'border-slate-200 text-slate-300'" aria-label="{{ value }} de 5">★</button>{% endfor %}</div>
+        <button x-show="!sent" :disabled="!score" @click="submit()" class="btn-premium mt-4 disabled:opacity-40">Enviar avaliação</button><p x-show="sent" class="mt-4 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Obrigado pela avaliação.</p>
+      </div>
+      {% endif %}
 
       {% if is_staff %}
       <!-- Classificação operacional -->

@@ -11,8 +11,7 @@ local (sincronizados do AD) conseguem interagir com os chamados.
 """
 from __future__ import annotations
 
-import time
-from threading import Lock
+from datetime import timedelta
 from urllib.parse import quote
 
 from fastapi import (
@@ -44,17 +43,25 @@ from attachment_service import (
 )
 from database import (
     Attachment,
+    CannedResponse,
+    Category,
     Comment,
+    InAppNotification,
+    SatisfactionRating,
     Ticket,
     TicketPriority,
     TicketStatus,
+    TypingPresence,
     User,
     get_db,
+    utcnow,
 )
+from in_app_service import notify
 from outbox_service import enqueue_ticket_completed, enqueue_ticket_update
 from projeto_service import ProjetosUnavailableError, find_projeto
 from time_utils import format_local_datetime, iso_utc
 from workflow_service import (
+    RESOLUTION_STATUSES,
     WorkflowError,
     allowed_statuses,
     handle_requester_reply,
@@ -66,8 +73,6 @@ from workflow_service import (
 )
 
 router = APIRouter(prefix="/api", tags=["api"])
-_typing_lock = Lock()
-_typing_users: dict[int, dict[int, tuple[str, float]]] = {}
 
 
 # --------------------------------------------------------------------------
@@ -96,6 +101,26 @@ class TicketMetadataIn(BaseModel):
 
 class TypingIn(BaseModel):
     typing: bool = True
+
+
+class SatisfactionIn(BaseModel):
+    score: int = Field(..., ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class BulkStatusIn(BaseModel):
+    ticket_ids: list[int] = Field(..., min_length=1, max_length=100)
+    status: TicketStatus
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CatalogItemIn(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+
+
+class CannedResponseIn(BaseModel):
+    title: str = Field(..., min_length=2, max_length=120)
+    content: str = Field(..., min_length=2, max_length=5000)
 
 
 class AttachmentOut(BaseModel):
@@ -221,21 +246,10 @@ def _apply_message_activity(
         _append_automatic_reply_event(db, ticket, current_user)
 
 
-def _active_typing_users(ticket_id: int, current_user_id: int) -> list[str]:
-    now = time.monotonic()
-    with _typing_lock:
-        users = _typing_users.get(ticket_id, {})
-        expired = [user_id for user_id, (_, until) in users.items() if until <= now]
-        for user_id in expired:
-            users.pop(user_id, None)
-        if not users:
-            _typing_users.pop(ticket_id, None)
-            return []
-        return [
-            name
-            for user_id, (name, _) in users.items()
-            if user_id != current_user_id
-        ]
+def _active_typing_users(db: Session, ticket_id: int, current_user_id: int) -> list[str]:
+    now = utcnow()
+    db.query(TypingPresence).filter(TypingPresence.expires_at <= now).delete(synchronize_session=False)
+    return [row[0] for row in db.query(TypingPresence.user_name).filter(TypingPresence.ticket_id == ticket_id, TypingPresence.user_id != current_user_id, TypingPresence.expires_at > now).all()]
 
 
 @router.get("/tickets/{ticket_id}/state", response_model=TicketStateOut)
@@ -278,7 +292,7 @@ def ticket_state(
             _serialize_comment(comment)
             for comment in comments
         ],
-        typing_users=_active_typing_users(ticket.id, current_user.id),
+        typing_users=_active_typing_users(db, ticket.id, current_user.id),
     )
 
 
@@ -291,17 +305,17 @@ def ticket_typing(
 ):
     ticket = _get_ticket_or_404(db, ticket_id)
     _ensure_ticket_access(ticket, current_user)
-    with _typing_lock:
-        users = _typing_users.setdefault(ticket.id, {})
-        if payload.typing:
-            users[current_user.id] = (
-                current_user.full_name,
-                time.monotonic() + 5,
-            )
+    presence = db.query(TypingPresence).filter(TypingPresence.ticket_id == ticket.id, TypingPresence.user_id == current_user.id).first()
+    if payload.typing:
+        if presence is None:
+            presence = TypingPresence(ticket_id=ticket.id, user_id=current_user.id, user_name=current_user.full_name, expires_at=utcnow() + timedelta(seconds=5))
+            db.add(presence)
         else:
-            users.pop(current_user.id, None)
-            if not users:
-                _typing_users.pop(ticket.id, None)
+            presence.user_name = current_user.full_name
+            presence.expires_at = utcnow() + timedelta(seconds=5)
+    elif presence is not None:
+        db.delete(presence)
+    db.commit()
 
 
 @router.get("/attachments/{attachment_id}")
@@ -422,6 +436,7 @@ def add_comment(
         )
     target = _notification_target(ticket, current_user)
     if target and not payload.is_internal:
+        notify(db, target, ticket, "Nova mensagem", "Há uma nova mensagem pública na demanda.")
         enqueue_ticket_update(
             db,
             target.email,
@@ -519,6 +534,7 @@ def add_message_with_attachments(
             update_text += f" A mensagem possui {len(valid_files)} anexo(s)."
         target = _notification_target(ticket, current_user)
         if target and not is_internal:
+            notify(db, target, ticket, "Nova mensagem", update_text)
             enqueue_ticket_update(
                 db,
                 target.email,
@@ -610,6 +626,85 @@ def change_status(
     db.commit()
     db.refresh(event)
     return _serialize_comment(event)
+
+
+@router.post("/tickets/{ticket_id}/satisfaction", status_code=201)
+def rate_ticket(ticket_id: int, payload: SatisfactionIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ticket = _get_ticket_or_404(db, ticket_id)
+    if ticket.requester_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Apenas o solicitante pode avaliar")
+    if ticket.status not in RESOLUTION_STATUSES:
+        raise HTTPException(status_code=409, detail="A demanda ainda não foi finalizada")
+    if db.query(SatisfactionRating).filter(SatisfactionRating.ticket_id == ticket.id).first():
+        raise HTTPException(status_code=409, detail="Esta demanda já foi avaliada")
+    rating = SatisfactionRating(ticket_id=ticket.id, requester_id=current_user.id, score=payload.score, comment=(payload.comment or "").strip() or None)
+    db.add(rating)
+    record_event(db, "ticket.satisfaction.created", actor=current_user, ticket=ticket, summary="Avaliação de atendimento registrada.", changes={"score": payload.score}, source="api")
+    db.commit()
+    return {"ok": True, "score": payload.score}
+
+
+@router.get("/notifications")
+def list_notifications(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    items = db.query(InAppNotification).filter(InAppNotification.user_id == current_user.id).order_by(InAppNotification.created_at.desc()).limit(50).all()
+    return [{"id": item.id, "ticket_id": item.ticket_id, "title": item.title, "message": item.message, "read": item.read_at is not None, "created_at": iso_utc(item.created_at)} for item in items]
+
+
+@router.post("/notifications/{notification_id}/read", status_code=204)
+def read_notification(notification_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.query(InAppNotification).filter(InAppNotification.id == notification_id, InAppNotification.user_id == current_user.id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Notificação não encontrada")
+    item.read_at = utcnow()
+    db.commit()
+
+
+@router.get("/catalog/categories")
+def list_categories(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return [{"id": item.id, "name": item.name} for item in db.query(Category).filter(Category.is_active.is_(True)).order_by(Category.name).all()]
+
+
+@router.post("/catalog/categories", status_code=201)
+def create_category(payload: CatalogItemIn, current_user: User = Depends(require_roles(ROLE_ADMIN)), db: Session = Depends(get_db)):
+    name = payload.name.strip()
+    if db.query(Category).filter(func.lower(Category.name) == name.lower()).first():
+        raise HTTPException(status_code=409, detail="Categoria já cadastrada")
+    item = Category(name=name)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {"id": item.id, "name": item.name}
+
+
+@router.get("/canned-responses")
+def list_canned_responses(current_user: User = Depends(require_roles(ROLE_ADMIN, ROLE_TECHNICIAN)), db: Session = Depends(get_db)):
+    return [{"id": item.id, "title": item.title, "content": item.content} for item in db.query(CannedResponse).filter(CannedResponse.is_active.is_(True)).order_by(CannedResponse.title).all()]
+
+
+@router.post("/canned-responses", status_code=201)
+def create_canned_response(payload: CannedResponseIn, current_user: User = Depends(require_roles(ROLE_ADMIN)), db: Session = Depends(get_db)):
+    item = CannedResponse(title=payload.title.strip(), content=payload.content.strip(), created_by_id=current_user.id)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {"id": item.id, "title": item.title, "content": item.content}
+
+
+@router.patch("/bulk/tickets/status")
+def bulk_ticket_status(payload: BulkStatusIn, current_user: User = Depends(require_roles(ROLE_ADMIN, ROLE_TECHNICIAN)), db: Session = Depends(get_db)):
+    ids = sorted(set(payload.ticket_ids))
+    tickets = db.query(Ticket).filter(Ticket.id.in_(ids)).all()
+    if len(tickets) != len(ids):
+        raise HTTPException(status_code=404, detail="Uma ou mais demandas não foram encontradas")
+    try:
+        for ticket in tickets:
+            transition_ticket(ticket, payload.status, requester=False, note=payload.note)
+            db.add(Comment(ticket_id=ticket.id, author_id=current_user.id, content=f'Status alterado em lote para "{payload.status.value}".', is_system=True, is_internal=False))
+        db.commit()
+    except WorkflowError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"updated": ids, "status": payload.status.value}
 
 
 # --------------------------------------------------------------------------

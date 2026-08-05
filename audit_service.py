@@ -72,6 +72,7 @@ _ALLOWED_FIELDS = {
     "has_note",
     "attachment_count",
     "count",
+    "score",
     "attempts",
     "max_attempts",
     "event_type",
@@ -417,4 +418,3 @@ def changes_for_display(event: AuditEvent) -> dict[str, Any]:
     except (TypeError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
-

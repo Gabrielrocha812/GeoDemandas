@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const noteDialog = board.querySelector(".kanban-note-dialog");
   const noteInput = board.querySelector(".kanban-note-input");
   const noteTitle = board.querySelector(".kanban-note-title");
+  const bulkApply = board.querySelector(".kanban-bulk-apply");
   const statusesRequiringNote = new Set([
     "Bloqueado",
     "Resolvido",
@@ -156,6 +157,27 @@ document.addEventListener("DOMContentLoaded", () => {
       zone.classList.remove("is-over");
       if (draggedCard) moveTicket(draggedCard, zone.closest(".kanban-column").dataset.status);
     });
+  });
+
+  bulkApply?.addEventListener("click", async () => {
+    const ticketIds = Array.from(board.querySelectorAll(".kanban-select:checked")).map((item) => Number(item.value));
+    const status = board.querySelector("#bulk-status")?.value;
+    const note = board.querySelector("#bulk-note")?.value.trim() || null;
+    if (!ticketIds.length || !status) {
+      showFeedback("Selecione ao menos uma demanda e o status de destino.", false);
+      return;
+    }
+    bulkApply.disabled = true;
+    try {
+      const response = await fetch("/api/bulk/tickets/status", {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ticket_ids: ticketIds, status, note})});
+      if (!response.ok) throw new Error(await responseError(response));
+      showFeedback(`${ticketIds.length} demanda(s) atualizada(s).`, true);
+      window.location.reload();
+    } catch (error) {
+      showFeedback(error.message || "Não foi possível aplicar a ação em lote.", false);
+    } finally {
+      bulkApply.disabled = false;
+    }
   });
 
   updateColumnState();

@@ -21,18 +21,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from auth import get_optional_user
 from config import settings
-from database import init_db
+from database import SessionLocal, init_db
+from sqlalchemy import text
+from operational_health import worker_status
 from email_worker import email_worker_loop, stop_worker
 from outbox_service import (
     notification_outbox_worker_loop,
@@ -53,18 +57,19 @@ logger = logging.getLogger("geodemandas")
 async def lifespan(app: FastAPI):
     # --- startup ---
     logger.info("Inicializando GeoDemandas Brandt...")
+    if not settings.DEV_MODE and settings.SECRET_KEY == "dev-secret-key":
+        raise RuntimeError("SECRET_KEY de produção não foi configurada")
     init_db()
-    worker_tasks = [
-        asyncio.create_task(email_worker_loop()),
-        asyncio.create_task(notification_outbox_worker_loop()),
-        asyncio.create_task(sla_alert_worker_loop()),
-    ]
+    worker_tasks = []
+    if settings.EMBEDDED_WORKERS:
+        worker_tasks = [asyncio.create_task(email_worker_loop()), asyncio.create_task(notification_outbox_worker_loop()), asyncio.create_task(sla_alert_worker_loop())]
     yield
     # --- shutdown ---
     logger.info("Encerrando workers de e-mail, notificações e SLA...")
-    stop_worker()
-    stop_notification_outbox_worker()
-    stop_sla_alert_worker()
+    if worker_tasks:
+        stop_worker()
+        stop_notification_outbox_worker()
+        stop_sla_alert_worker()
     for worker_task in worker_tasks:
         worker_task.cancel()
     await asyncio.gather(*worker_tasks, return_exceptions=True)
@@ -81,6 +86,18 @@ app.add_middleware(
     same_site="lax",
     https_only=settings.APP_BASE_URL.lower().startswith("https://"),
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if settings.APP_BASE_URL.lower().startswith("https://"):
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 # Rotas
 app.include_router(web.router)
@@ -128,12 +145,41 @@ def health():
         if email_provider == "graph"
         else settings.SMTP_ENABLED
     )
-    return {
-        "status": "ok",
+    checks = {}
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        checks["database"] = {"healthy": True}
+    except Exception:
+        logger.exception("Falha no health check do banco")
+        checks["database"] = {"healthy": False}
+    finally:
+        if "db" in locals():
+            db.close()
+    upload_root = Path(settings.UPLOAD_DIR)
+    upload_probe = upload_root if upload_root.exists() else upload_root.parent
+    checks["uploads"] = {
+        "healthy": upload_probe.exists() and os.access(upload_probe, os.W_OK),
+        "configured": str(upload_root),
+    }
+    checks["workers"] = worker_status(
+        max_age_seconds=settings.WORKER_HEARTBEAT_MAX_AGE_SECONDS
+    )
+    workers_healthy = all(item["healthy"] for item in checks["workers"].values())
+    healthy = checks["database"]["healthy"] and checks["uploads"]["healthy"] and workers_healthy
+    payload = {
+        "status": "ok" if healthy else "degraded",
         "app": settings.APP_NAME,
         "dev_mode": settings.DEV_MODE,
         "ldap_real": settings.LDAP_USE_REAL,
         "smtp_enabled": settings.SMTP_ENABLED,
         "email_provider": email_provider,
         "email_enabled": email_enabled,
+        "checks": checks,
     }
+    return JSONResponse(payload, status_code=200 if healthy else 503)
+
+
+@app.get("/health/live")
+def liveness():
+    return {"status": "ok"}

@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # --- SLA operacional (horas corridas; calendário útil entra na próxima etapa) ---
     SLA_BUSINESS_START_HOUR: int = 8
     SLA_BUSINESS_END_HOUR: int = 18
+    SLA_HOLIDAYS: str = ""
     SLA_FIRST_RESPONSE_HOURS_BAIXA: int = 24
     SLA_FIRST_RESPONSE_HOURS_MEDIA: int = 8
     SLA_FIRST_RESPONSE_HOURS_ALTA: int = 4
@@ -44,6 +45,11 @@ class Settings(BaseSettings):
     SLA_RISK_WINDOW_HOURS: int = 4
     SLA_ALERT_POLL_INTERVAL_SECONDS: int = 300
     DASHBOARD_PAGE_SIZE: int = 25
+    KANBAN_COLUMN_LIMIT: int = 50
+    LOGIN_RATE_LIMIT_ATTEMPTS: int = 5
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 900
+    WORKER_HEARTBEAT_MAX_AGE_SECONDS: int = 900
+    EMBEDDED_WORKERS: bool = True
 
     # --- IMAP (caixa monitorada) ---
     IMAP_HOST: str = "imap.brandt.com.br"
@@ -83,6 +89,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     MAX_ATTACHMENT_SIZE_MB: int = 25
     MAX_ATTACHMENTS_PER_MESSAGE: int = 10
+    BLOCKED_ATTACHMENT_EXTENSIONS: str = ".exe,.com,.bat,.cmd,.ps1,.js,.vbs,.scr,.msi,.dll"
 
     # --- API corporativa de projetos ---
     # Lista os projetos ativos que podem ser vinculados a uma demanda.

@@ -175,6 +175,15 @@
         {% endif %}
       </div>
 
+      <div>
+        <label for="demand-category" class="mb-2 block text-xs font-black uppercase tracking-wider text-slate-600">Categoria</label>
+        <select id="demand-category" name="category" class="field-premium cursor-pointer">
+          <option value="">Selecione uma categoria</option>
+          {% for item in categories %}<option value="{{ item.name }}" {% if form and form.category == item.name %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select>
+        {% if not categories %}<p class="mt-2 text-xs font-medium text-slate-500">A equipe ainda não cadastrou categorias; a demanda pode ser enviada sem classificação.</p>{% endif %}
+      </div>
+
       <fieldset>
         <legend class="mb-3 text-xs font-black uppercase tracking-wider text-slate-600">Prioridade</legend>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">

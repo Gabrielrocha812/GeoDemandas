@@ -36,8 +36,9 @@ from auth import (
 from attachment_service import delete_saved_uploads, save_uploads
 from config import settings
 from business_time import add_business_hours
-from database import Ticket, TicketPriority, TicketStatus, User, get_db, utcnow
+from database import CannedResponse, Category, InAppNotification, SatisfactionRating, Ticket, TicketPriority, TicketStatus, User, get_db, utcnow
 from ldap_auth import LDAPOperationalError, authenticate, list_active_ldap_users
+from login_rate_limit import clear_identity, register_failure, retry_after
 from outbox_service import enqueue_ticket_received
 from projeto_service import ProjetosUnavailableError, find_projeto, list_projetos
 from time_utils import format_local_datetime, iso_utc
@@ -132,6 +133,16 @@ def login_submit(
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    wait_seconds = retry_after(client_ip, email)
+    if wait_seconds:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": f"Muitas tentativas. Aguarde {wait_seconds // 60 + 1} minuto(s)."},
+            status_code=429,
+            headers={"Retry-After": str(wait_seconds)},
+        )
     # 1) Autentica no AD (mock em DEV_MODE)
     try:
         ad_user = authenticate(email, password)
@@ -148,6 +159,7 @@ def login_submit(
             status_code=503,
         )
     if not ad_user:
+        register_failure(client_ip, email)
         return templates.TemplateResponse(
             request,
             "login.html",
@@ -189,6 +201,7 @@ def login_submit(
         db.refresh(user)
 
     login_user(request, user)
+    clear_identity(email)
     destination = "/minhas-demandas" if user.role == ROLE_REQUESTER else "/"
     return RedirectResponse(url=destination, status_code=303)
 
@@ -199,6 +212,47 @@ def logout(request: Request):
     return RedirectResponse(url="/login", status_code=303)
 
 
+@router.get("/notificacoes", response_class=HTMLResponse)
+def notifications_page(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    items = db.query(InAppNotification).filter(InAppNotification.user_id == current_user.id).order_by(InAppNotification.created_at.desc()).limit(100).all()
+    return templates.TemplateResponse(request, "notifications.html", {"current_user": current_user, "notifications": items})
+
+
+@router.post("/notificacoes/{notification_id}/ler")
+def notification_read(notification_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.query(InAppNotification).filter(InAppNotification.id == notification_id, InAppNotification.user_id == current_user.id).first()
+    if item:
+        item.read_at = utcnow()
+        db.commit()
+    return RedirectResponse(f"/tickets/{item.ticket_id}" if item and item.ticket_id else "/notificacoes", status_code=303)
+
+
+@router.get("/admin/catalogo", response_class=HTMLResponse)
+def admin_catalog(
+    request: Request,
+    current_user: User = Depends(require_roles(ROLE_ADMIN)),
+    db: Session = Depends(get_db),
+):
+    return templates.TemplateResponse(request, "admin_catalog.html", {"current_user": current_user, "categories": db.query(Category).order_by(Category.name).all(), "responses": db.query(CannedResponse).order_by(CannedResponse.title).all()})
+
+
+@router.post("/admin/catalogo/categorias")
+def admin_create_category(name: str = Form(...), current_user: User = Depends(require_roles(ROLE_ADMIN)), db: Session = Depends(get_db)):
+    clean = name.strip()[:120]
+    if clean and not db.query(Category).filter(func.lower(Category.name) == clean.lower()).first():
+        db.add(Category(name=clean))
+        db.commit()
+    return RedirectResponse("/admin/catalogo", status_code=303)
+
+
+@router.post("/admin/catalogo/respostas")
+def admin_create_response(title: str = Form(...), content: str = Form(...), current_user: User = Depends(require_roles(ROLE_ADMIN)), db: Session = Depends(get_db)):
+    if title.strip() and content.strip():
+        db.add(CannedResponse(title=title.strip()[:120], content=content.strip()[:5000], created_by_id=current_user.id))
+        db.commit()
+    return RedirectResponse("/admin/catalogo", status_code=303)
+
+
 # --------------------------------------------------------------------------
 # Cadastro de demanda pelo portal
 # --------------------------------------------------------------------------
@@ -206,6 +260,7 @@ def logout(request: Request):
 def new_demand_page(
     request: Request,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     projetos, projetos_error = _load_projetos()
     return templates.TemplateResponse(
@@ -216,6 +271,7 @@ def new_demand_page(
             "error": None,
             "projetos": projetos,
             "projetos_error": projetos_error,
+            "categories": db.query(Category).filter(Category.is_active.is_(True)).order_by(Category.name).all(),
         },
     )
 
@@ -226,6 +282,7 @@ def create_demand(
     subject: str = Form(...),
     body: str = Form(...),
     priority: str = Form(TicketPriority.MEDIA.value),
+    category: str = Form(""),
     project_code: str = Form(""),
     attachments: list[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
@@ -235,6 +292,7 @@ def create_demand(
     body = body.strip()
     project_code = project_code.strip()
     projetos, projetos_error = _load_projetos()
+    categories = db.query(Category).filter(Category.is_active.is_(True)).order_by(Category.name).all()
 
     def render_error(message: str, status_code: int = 422):
         return templates.TemplateResponse(
@@ -245,10 +303,12 @@ def create_demand(
                 "error": message,
                 "projetos": projetos,
                 "projetos_error": projetos_error,
+                "categories": categories,
                 "form": {
                     "subject": subject,
                     "body": body,
                     "priority": priority,
+                    "category": category,
                     "project_code": project_code,
                 },
             },
@@ -284,6 +344,7 @@ def create_demand(
         requester_id=current_user.id,
         project_code=projeto["cod_projeto"] if projeto else None,
         project_name=projeto["cod_projeto_alfa"] if projeto else None,
+        category=category.strip()[:120] or None,
         hub=(_user_hubs(current_user) or [None])[0],
         source_channel="portal",
     )
@@ -442,20 +503,12 @@ def kanban(
         TicketStatus.RESOLVIDO,
         TicketStatus.REABERTO,
     )
-    tickets = (
-        db.query(Ticket)
-        .options(joinedload(Ticket.requester), joinedload(Ticket.assignee))
-        .filter(Ticket.status.in_(board_statuses))
-        .order_by(Ticket.last_activity_at.desc())
-        .all()
-    )
-    columns = [
-        {
-            "status": status,
-            "tickets": [ticket for ticket in tickets if ticket.status == status],
-        }
-        for status in board_statuses
-    ]
+    columns = []
+    tickets = []
+    for status in board_statuses:
+        column_tickets = db.query(Ticket).options(joinedload(Ticket.requester), joinedload(Ticket.assignee)).filter(Ticket.status == status).order_by(Ticket.last_activity_at.desc()).limit(settings.KANBAN_COLUMN_LIMIT).all()
+        tickets.extend(column_tickets)
+        columns.append({"status": status, "tickets": column_tickets})
     return templates.TemplateResponse(
         request,
         "kanban.html",
@@ -745,6 +798,8 @@ def ticket_detail(
             "known_hubs": _known_hubs(db, ticket) if is_staff else [],
             "sla": sla_snapshot(ticket),
             "is_staff": is_staff,
+            "canned_responses": db.query(CannedResponse).filter(CannedResponse.is_active.is_(True)).order_by(CannedResponse.title).all() if is_staff else [],
+            "satisfaction": db.query(SatisfactionRating).filter(SatisfactionRating.ticket_id == ticket.id).first(),
         },
     )
 
