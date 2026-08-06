@@ -4,20 +4,20 @@ from __future__ import annotations
 import asyncio
 import csv
 import html
-from io import BytesIO, StringIO
+from io import StringIO
 import logging
 import shutil
 from datetime import timedelta
 from pathlib import Path
 
 from sqlalchemy import func
-from openpyxl import Workbook
 
 from config import settings
 from database import NotificationOutbox, ReportSchedule, SessionLocal, SystemAlert, Ticket, TicketStatus, utcnow
 from notification_service import send_custom_email
 from operational_health import beat, worker_status
 from teams_service import send_teams_notification
+from routes.management import _xlsx_bytes
 
 logger = logging.getLogger("geodemandas.automation")
 
@@ -88,17 +88,7 @@ def _report_attachment(db, report_format: str) -> tuple[str, bytes, str]:
         writer.writerow(headers)
         writer.writerows(values)
         return "geodemandas.csv", ("\ufeff" + stream.getvalue()).encode("utf-8"), "text/csv"
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Demandas"
-    sheet.append(headers)
-    for row in values:
-        sheet.append(row)
-    for cell in sheet[1]:
-        cell.font = cell.font.copy(bold=True)
-    output = BytesIO()
-    workbook.save(output)
-    return "geodemandas.xlsx", output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return "geodemandas.xlsx", _xlsx_bytes(headers, values), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def scheduled_reports_cycle() -> None:
