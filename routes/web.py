@@ -206,7 +206,7 @@ def login_submit(
     return RedirectResponse(url=destination, status_code=303)
 
 
-@router.get("/logout")
+@router.post("/logout")
 def logout(request: Request):
     logout_user(request)
     return RedirectResponse(url="/login", status_code=303)

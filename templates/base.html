@@ -5,20 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#008542">
   <title>{% block title %}GeoDemandas Brandt{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: { extend: {
-        colors: { brandt: { DEFAULT: '#008542', light: '#16b364', dark: '#005f31' } },
-        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
-      }}
-    };
-  </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/tailwind.css">
   <link rel="stylesheet" href="/static/css/app.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script defer src="/static/js/alpine.min.js"></script>
   <script defer src="/static/js/app.js"></script>
   {% block head_extra %}{% endblock %}
 </head>
@@ -140,9 +129,11 @@
                 <p class="truncate text-sm font-extrabold text-slate-900">{{ current_user.full_name }}</p>
                 <p class="truncate text-[11px] font-semibold text-slate-500">{{ {'administrador':'Administrador','tecnico':'Técnico','solicitante':'Solicitante'}.get(current_user.role, 'Solicitante') }}</p>
               </div>
-              <a href="/logout" class="flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600" aria-label="Sair">
+              <form method="post" action="/logout">
+              <button type="submit" class="flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600" aria-label="Sair">
                 <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-              </a>
+              </button>
+              </form>
             </div>
           </div>
         </div>

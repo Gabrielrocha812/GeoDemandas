@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup do GeoDemandas
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/geodemandas/geodemandas.env
+ExecStart=/opt/geodemandas/current/deploy/backup.sh
+Nice=10
+IOSchedulingClass=best-effort

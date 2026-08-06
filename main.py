@@ -24,6 +24,7 @@ import logging
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
@@ -31,6 +32,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from auth import get_optional_user
 from config import settings
@@ -53,12 +55,31 @@ logging.basicConfig(
 logger = logging.getLogger("geodemandas")
 
 
+def validate_production_settings() -> None:
+    if settings.DEV_MODE:
+        return
+    errors = []
+    if settings.SECRET_KEY == "dev-secret-key" or len(settings.SECRET_KEY) < 32:
+        errors.append("SECRET_KEY deve ter pelo menos 32 caracteres")
+    if not settings.APP_BASE_URL.lower().startswith("https://"):
+        errors.append("APP_BASE_URL deve usar HTTPS")
+    if not settings.LDAP_USE_REAL:
+        errors.append("LDAP_USE_REAL deve ser true")
+    if settings.DATABASE_URL.startswith("sqlite"):
+        errors.append("DATABASE_URL deve apontar para PostgreSQL")
+    if settings.EMBEDDED_WORKERS:
+        errors.append("EMBEDDED_WORKERS deve ser false")
+    if not settings.REQUIRE_ANTIVIRUS:
+        errors.append("REQUIRE_ANTIVIRUS deve ser true")
+    if errors:
+        raise RuntimeError("Configuracao de producao invalida: " + "; ".join(errors))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- startup ---
     logger.info("Inicializando GeoDemandas Brandt...")
-    if not settings.DEV_MODE and settings.SECRET_KEY == "dev-secret-key":
-        raise RuntimeError("SECRET_KEY de produção não foi configurada")
+    validate_production_settings()
     init_db()
     worker_tasks = []
     if settings.EMBEDDED_WORKERS:
@@ -78,6 +99,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+allowed_hosts = [item.strip() for item in settings.ALLOWED_HOSTS.split(",") if item.strip()]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts or ["localhost"])
+
 # Sessão assinada (cookie) para autenticação da plataforma web.
 app.add_middleware(
     SessionMiddleware,
@@ -90,11 +114,25 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    if settings.FORCE_HTTPS and request.url.scheme != "https":
+        return RedirectResponse(str(request.url.replace(scheme="https")), status_code=308)
+    if request.method not in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+        origin = request.headers.get("origin")
+        if origin:
+            expected = urlparse(settings.APP_BASE_URL)
+            supplied = urlparse(origin)
+            if (supplied.scheme, supplied.netloc) != (expected.scheme, expected.netloc):
+                return JSONResponse({"detail": "Origem da requisicao nao autorizada"}, status_code=403)
+        elif request.headers.get("sec-fetch-site") == "cross-site":
+            return JSONResponse({"detail": "Requisicao entre sites bloqueada"}, status_code=403)
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy", settings.CONTENT_SECURITY_POLICY)
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
     if settings.APP_BASE_URL.lower().startswith("https://"):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response

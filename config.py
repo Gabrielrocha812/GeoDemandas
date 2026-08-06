@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 900
     WORKER_HEARTBEAT_MAX_AGE_SECONDS: int = 900
     EMBEDDED_WORKERS: bool = True
+    ALLOWED_HOSTS: str = "localhost,127.0.0.1,testserver"
+    FORCE_HTTPS: bool = False
+    CONTENT_SECURITY_POLICY: str = (
+        "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
+        "form-action 'self'; object-src 'none'; img-src 'self' data: blob:; "
+        "font-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'"
+    )
 
     # --- IMAP (caixa monitorada) ---
     IMAP_HOST: str = "imap.brandt.com.br"
@@ -90,6 +98,9 @@ class Settings(BaseSettings):
     MAX_ATTACHMENT_SIZE_MB: int = 25
     MAX_ATTACHMENTS_PER_MESSAGE: int = 10
     BLOCKED_ATTACHMENT_EXTENSIONS: str = ".exe,.com,.bat,.cmd,.ps1,.js,.vbs,.scr,.msi,.dll"
+    REQUIRE_ANTIVIRUS: bool = False
+    ANTIVIRUS_COMMAND: str = "clamdscan"
+    ANTIVIRUS_TIMEOUT_SECONDS: int = 30
 
     # --- API corporativa de projetos ---
     # Lista os projetos ativos que podem ser vinculados a uma demanda.

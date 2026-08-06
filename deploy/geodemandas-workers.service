@@ -1,17 +1,20 @@
 [Unit]
 Description=GeoDemandas Background Workers
-After=network-online.target geodemandas-web.service
+After=network-online.target postgresql.service
 
 [Service]
 Type=simple
 User=geodemandas
-WorkingDirectory=/opt/geodemandas
-EnvironmentFile=/opt/geodemandas/.env
-ExecStart=/opt/geodemandas/.venv/bin/python worker_main.py
+WorkingDirectory=/opt/geodemandas/current
+EnvironmentFile=/etc/geodemandas/geodemandas.env
+ExecStart=/opt/geodemandas/venv/bin/python worker_main.py
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/geodemandas/uploads
 
 [Install]
 WantedBy=multi-user.target

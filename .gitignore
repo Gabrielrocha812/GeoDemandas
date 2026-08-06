@@ -13,3 +13,6 @@ geodemandas.db
 *-preview.png
 uploads/
 *.codex-backup-*
+node_modules/
+static/vendor/
+geodemandas-production-payload.zip

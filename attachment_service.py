@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -65,6 +66,7 @@ def save_uploads(
                             ),
                         )
                     output.write(chunk)
+            _scan_attachment(destination, original_name)
             attachment = Attachment(
                 ticket=ticket,
                 comment=comment,
@@ -112,3 +114,26 @@ def _safe_original_name(filename: str) -> str:
     name = Path(filename.replace("\\", "/")).name
     name = re.sub(r"[\x00-\x1f\x7f]", "", name).strip()
     return name[:500] or "arquivo"
+
+
+def _scan_attachment(path: Path, original_name: str) -> None:
+    if not settings.REQUIRE_ANTIVIRUS:
+        return
+    try:
+        result = subprocess.run(
+            [settings.ANTIVIRUS_COMMAND, "--no-summary", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=settings.ANTIVIRUS_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="A verificacao de seguranca do anexo esta indisponivel.",
+        ) from exc
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=415,
+            detail=f'O arquivo "{original_name}" foi recusado pela verificacao de seguranca.',
+        )

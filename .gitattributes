@@ -1,0 +1,4 @@
+static/css/datatables.min.css -text
+static/js/alpine.min.js -text
+static/js/datatables.min.js -text
+static/css/tailwind.css -text

@@ -25,3 +25,5 @@ jobs:
           DEV_MODE: "true"
       - run: python -m compileall -q .
       - run: git diff --check
+      - run: pip-audit -r requirements.txt
+      - run: bandit -q --severity-level high -r . -x ./venv,./.git,./test_api_workflow.py,./test_audit_service.py,./test_email_worker.py,./test_management.py,./test_notification_outbox.py,./test_operations.py,./test_product_features.py,./test_security.py,./test_sla_monitor.py,./test_time_utils.py,./test_workflow_service.py

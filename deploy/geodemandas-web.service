@@ -5,14 +5,17 @@ After=network-online.target
 [Service]
 Type=simple
 User=geodemandas
-WorkingDirectory=/opt/geodemandas
-EnvironmentFile=/opt/geodemandas/.env
+WorkingDirectory=/opt/geodemandas/current
+EnvironmentFile=/etc/geodemandas/geodemandas.env
 Environment=EMBEDDED_WORKERS=false
-ExecStart=/opt/geodemandas/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8046 --workers 2
+ExecStart=/opt/geodemandas/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8046 --workers 2 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/geodemandas/uploads
 
 [Install]
 WantedBy=multi-user.target
