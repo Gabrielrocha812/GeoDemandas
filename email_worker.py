@@ -80,11 +80,12 @@ async def email_worker_loop() -> None:
         await asyncio.to_thread(_process_mock_emails)
 
     while _running:
-        beat("email")
         try:
             if not settings.DEV_MODE:
                 # to_thread evita bloquear o event loop com imaplib síncrono.
                 await asyncio.to_thread(_poll_imap_once)
+            # Heartbeat significa ciclo concluído, não apenas processo vivo.
+            beat("email")
         except Exception as exc:  # noqa: BLE001 (worker resiliente)
             logger.exception("Erro no ciclo do worker: %s", exc)
         await asyncio.sleep(settings.EMAIL_POLL_INTERVAL)
