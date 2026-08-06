@@ -812,7 +812,7 @@ def change_ticket_metadata(
             audit_before["priority"] = old_priority.value
             ticket.priority = payload.priority
             audit_after["priority"] = payload.priority.value
-            initialize_sla(ticket, reset=True)
+            initialize_sla(ticket, reset=True, db=db)
             changed.append(
                 f'prioridade de "{old_priority.value}" para '
                 f'"{payload.priority.value}"'

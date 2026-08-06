@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 5
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 900
     WORKER_HEARTBEAT_MAX_AGE_SECONDS: int = 900
+    MONITOR_INTERVAL_SECONDS: int = 60
+    MONITOR_DISK_MIN_FREE_PERCENT: int = 10
+    MONITOR_ALERT_EMAILS: str = ""
+    TEAMS_WEBHOOK_URL: str = ""
+    SCHEDULED_REPORT_POLL_INTERVAL_SECONDS: int = 60
     EMBEDDED_WORKERS: bool = True
     ALLOWED_HOSTS: str = "localhost,127.0.0.1,testserver"
     FORCE_HTTPS: bool = False

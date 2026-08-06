@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 
 from config import settings
 from business_time import add_business_hours, business_hours_between
-from database import Ticket, TicketPriority, TicketStatus, utcnow
+from database import BusinessHoliday, SlaPolicy, Ticket, TicketPriority, TicketStatus, utcnow
+from sqlalchemy.orm import Session
 
 
 class WorkflowError(ValueError):
@@ -94,18 +95,38 @@ def initialize_sla(
     *,
     now: datetime | None = None,
     reset: bool = False,
+    db: Session | None = None,
 ) -> None:
     """Inicializa ou recalcula os marcos básicos de SLA da demanda."""
     now = now or utcnow()
     base = ticket.created_at or now
     ticket.last_activity_at = ticket.last_activity_at or base
+    first_hours = _first_response_hours(ticket.priority)
+    resolution_hours = _resolution_hours(ticket.priority)
+    holidays: set[str] = set()
+    if db is not None:
+        holidays = {row[0].isoformat() for row in db.query(BusinessHoliday.holiday_date).all()}
+        policies = (
+            db.query(SlaPolicy)
+            .filter(SlaPolicy.is_active.is_(True), SlaPolicy.priority == ticket.priority.value)
+            .all()
+        )
+        matches = [
+            policy for policy in policies
+            if (policy.project_code is None or policy.project_code == ticket.project_code)
+            and (policy.category is None or policy.category == ticket.category)
+        ]
+        if matches:
+            policy = max(matches, key=lambda item: (item.project_code is not None, item.category is not None, item.id))
+            first_hours = policy.first_response_hours
+            resolution_hours = policy.resolution_hours
     if reset or ticket.first_response_due_at is None:
         ticket.first_response_due_at = add_business_hours(
-            base, _first_response_hours(ticket.priority)
+            base, first_hours, holidays=holidays
         )
     if reset or ticket.resolution_due_at is None:
         ticket.resolution_due_at = add_business_hours(
-            base, _resolution_hours(ticket.priority)
+            base, resolution_hours, holidays=holidays
         )
 
 

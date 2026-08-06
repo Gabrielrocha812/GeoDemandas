@@ -348,7 +348,7 @@ def create_demand(
         hub=(_user_hubs(current_user) or [None])[0],
         source_channel="portal",
     )
-    initialize_sla(ticket)
+    initialize_sla(ticket, db=db)
     saved_attachments = []
     try:
         db.add(ticket)

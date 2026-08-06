@@ -44,9 +44,10 @@ from outbox_service import (
     notification_outbox_worker_loop,
     stop_notification_outbox_worker,
 )
-from routes import api, management, operations, web
+from routes import api, features, management, operations, web
 from routes.web import templates
 from sla_monitor import sla_alert_worker_loop, stop_sla_alert_worker
+from automation_worker import automation_worker_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,7 +84,7 @@ async def lifespan(app: FastAPI):
     init_db()
     worker_tasks = []
     if settings.EMBEDDED_WORKERS:
-        worker_tasks = [asyncio.create_task(email_worker_loop()), asyncio.create_task(notification_outbox_worker_loop()), asyncio.create_task(sla_alert_worker_loop())]
+        worker_tasks = [asyncio.create_task(email_worker_loop()), asyncio.create_task(notification_outbox_worker_loop()), asyncio.create_task(sla_alert_worker_loop()), asyncio.create_task(automation_worker_loop())]
     yield
     # --- shutdown ---
     logger.info("Encerrando workers de e-mail, notificações e SLA...")
@@ -142,6 +143,7 @@ app.include_router(web.router)
 app.include_router(api.router)
 app.include_router(operations.router)
 app.include_router(management.router)
+app.include_router(features.router)
 
 
 # --------------------------------------------------------------------------

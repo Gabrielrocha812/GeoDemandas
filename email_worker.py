@@ -369,7 +369,7 @@ def _create_ticket_from_email(
             source_message_id=message_id,
             requester_id=user.id,
         )
-        initialize_sla(ticket)
+        initialize_sla(ticket, db=db)
         db.add(ticket)
         db.flush()
         saved_attachments = save_uploads(db, ticket, user, attachments or [])

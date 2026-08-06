@@ -74,6 +74,7 @@
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Cadastrar demanda</span>
           </a>
           <a href="/notificacoes" title="Notificações" class="nav-link {% if request.url.path == '/notificacoes' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span :class="sidebarCollapsed ? 'lg:hidden' : ''">Notificações</span></a>
+          <a href="/conhecimento" title="Base de conhecimento" class="nav-link {% if request.url.path.startswith('/conhecimento') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5.5A2.5 2.5 0 016.5 3H11v16H6.5A2.5 2.5 0 004 21.5v-16zm16 0A2.5 2.5 0 0017.5 3H13v16h4.5a2.5 2.5 0 012.5 2.5v-16z"/></svg><span :class="sidebarCollapsed ? 'lg:hidden' : ''">Conhecimento</span></a>
           {% if not requester_home %}
           <a href="/minhas-demandas" title="Minhas demandas" class="nav-link {% if request.url.path == '/minhas-demandas' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M7 3h8l4 4v14H5V3h2zm8 0v5h5"/></svg>
@@ -81,12 +82,14 @@
           </a>
           {% endif %}
           {% if current_user and current_user.role in ['administrador', 'tecnico'] %}
+          <a href="/admin/busca" title="Busca e histórico" class="nav-link {% if request.url.path.startswith('/admin/busca') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M20 20l-4-4"/></svg><span :class="sidebarCollapsed ? 'lg:hidden' : ''">Busca avançada</span></a>
           <a href="/kanban" title="Kanban operacional" class="nav-link {% if request.url.path == '/kanban' %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5h4v14H4V5zm6 0h4v9h-4V5zm6 0h4v11h-4V5z"/></svg>
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Kanban</span>
           </a>
           {% endif %}
           {% if current_user and current_user.role == 'administrador' %}
+          <a href="/admin/configuracoes" title="Automação e SLA" class="nav-link {% if request.url.path.startswith('/admin/configuracoes') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M19.4 15a1.7 1.7 0 00.3 1.9l-2.8 2.8a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.6h-4a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-2.8-2.8a1.7 1.7 0 00.3-1.9A1.7 1.7 0 003 14v-4a1.7 1.7 0 001.6-1 1.7 1.7 0 00-.3-1.9l2.8-2.8a1.7 1.7 0 001.9.3A1.7 1.7 0 0010 3h4a1.7 1.7 0 001 1.6 1.7 1.7 0 001.9-.3l2.8 2.8a1.7 1.7 0 00-.3 1.9 1.7 1.7 0 001.6 1v4a1.7 1.7 0 00-1.6 1z"/></svg><span :class="sidebarCollapsed ? 'lg:hidden' : ''">Automação e SLA</span></a>
           <a href="/admin/indicadores" title="Indicadores gerenciais" class="nav-link {% if request.url.path.startswith('/admin/indicadores') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19V9m5 10V5m5 14v-7m5 7V3M3 21h18"/></svg>
             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">Indicadores</span>
@@ -102,6 +105,7 @@
           <a href="/admin/catalogo" title="Catálogo de atendimento" class="nav-link {% if request.url.path.startswith('/admin/catalogo') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/></svg><span :class="sidebarCollapsed ? 'lg:hidden' : ''">Catálogo</span>
           </a>
+          <a href="/admin/conhecimento" title="Administrar conhecimento" class="nav-link {% if request.url.path.startswith('/admin/conhecimento') %}active{% endif %}" :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6M4 4h16v16H4z"/></svg><span :class="sidebarCollapsed ? 'lg:hidden' : ''">Artigos</span></a>
           {% endif %}
         </nav>
 

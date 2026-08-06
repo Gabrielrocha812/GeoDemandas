@@ -4,6 +4,14 @@ Sistema interno de gestão de demandas. Colaboradores abrem chamados **enviando 
 
 Stack: **FastAPI · SQLAlchemy · ldap3 · Jinja2 · Tailwind CSS · Alpine.js**
 
+## Recursos operacionais
+
+- Base de conhecimento pesquisável, com categorias, artigos relacionados, rascunhos e publicação por técnicos.
+- Busca avançada por conteúdo, período, origem, responsável, prioridade, status e situação do SLA, junto do histórico de auditoria.
+- Políticas de SLA por prioridade, categoria e projeto, com calendário administrável de feriados.
+- Relatórios CSV/XLSX agendados e enviados como anexo por Microsoft Graph ou SMTP.
+- Monitoramento persistente de workers, disco e falhas da fila, com alertas por e-mail e Microsoft Teams.
+
 ---
 
 ## Como rodar localmente (modo desenvolvimento)

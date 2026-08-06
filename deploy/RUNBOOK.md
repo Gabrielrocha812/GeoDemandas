@@ -1,5 +1,10 @@
 # Runbook de produção
 
+URL oficial: `https://demandas.brandt.com.br` (o DNS deve apontar para
+`10.2.8.37`). Para alertas externos, configure `MONITOR_ALERT_EMAILS` e,
+opcionalmente, `TEAMS_WEBHOOK_URL` com a URL HTTPS criada por um Workflow do
+Microsoft Teams. Sem webhook, os alertas continuam registrados no painel.
+
 1. Crie usuário `geodemandas`, PostgreSQL e `/opt/geodemandas/releases`.
 2. Instale o código em uma release imutável e aponte `/opt/geodemandas/current`.
 3. Crie `/opt/geodemandas/venv`, instale `requirements.txt` e configure

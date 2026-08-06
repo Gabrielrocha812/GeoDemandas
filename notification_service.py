@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import base64
 import json
 import logging
 import smtplib
@@ -18,6 +19,36 @@ from config import settings
 logger = logging.getLogger("geodemandas.notifications")
 _token_lock = Lock()
 _token_cache: dict[str, str | float] = {"access_token": "", "expires_at": 0.0}
+
+
+def send_custom_email(recipient: str, subject: str, html_body: str, text_body: str, attachment: tuple[str, bytes, str] | None = None) -> bool:
+    """Envia comunicacoes operacionais e relatorios sem depender de um ticket."""
+    provider = settings.EMAIL_PROVIDER.strip().lower()
+    if provider == "graph":
+        return _send_graph(recipient, subject, html_body, attachment=attachment)
+    if provider != "smtp" or not settings.SMTP_ENABLED or not settings.SMTP_HOST:
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = formataddr((settings.SMTP_FROM_NAME, settings.SMTP_FROM_EMAIL))
+    msg["To"] = recipient
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+    if attachment:
+        filename, content, content_type = attachment
+        maintype, subtype = content_type.split("/", 1)
+        msg.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
+    try:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=20) as client:
+            if settings.SMTP_USE_TLS:
+                client.starttls()
+            if settings.SMTP_USERNAME:
+                client.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            client.send_message(msg)
+        return True
+    except Exception:
+        logger.exception("Falha ao enviar comunicacao para %s", recipient)
+        return False
 
 
 def send_ticket_received(
@@ -183,7 +214,7 @@ def _send_smtp(
         return False
 
 
-def _send_graph(recipient: str, email_subject: str, html_body: str) -> bool:
+def _send_graph(recipient: str, email_subject: str, html_body: str, attachment: tuple[str, bytes, str] | None = None) -> bool:
     if not all(
         [
             settings.GRAPH_TENANT_ID,
@@ -213,6 +244,14 @@ def _send_graph(recipient: str, email_subject: str, html_body: str) -> bool:
             },
             "saveToSentItems": True,
         }
+        if attachment:
+            filename, content, content_type = attachment
+            payload["message"]["attachments"] = [{
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "name": filename,
+                "contentType": content_type,
+                "contentBytes": base64.b64encode(content).decode("ascii"),
+            }]
         request = Request(
             url,
             data=json.dumps(payload).encode("utf-8"),

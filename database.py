@@ -12,7 +12,7 @@ Modelo de dados:
 from __future__ import annotations
 
 import enum
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -23,6 +23,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Date,
     create_engine,
     event,
     inspect,
@@ -406,6 +407,80 @@ class AuditEvent(Base):
     )
 
 
+class KnowledgeArticle(Base):
+    """Artigo pesquisavel da base de conhecimento."""
+
+    __tablename__ = "knowledge_articles"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(180), unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(220), nullable=False, index=True)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    tags: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    view_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class ReportSchedule(Base):
+    """Agenda persistente de relatorios gerenciais por e-mail."""
+
+    __tablename__ = "report_schedules"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    recipient: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    frequency: Mapped[str] = mapped_column(String(20), nullable=False)
+    report_format: Mapped[str] = mapped_column(String(10), default="xlsx", nullable=False)
+    filters_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class SlaPolicy(Base):
+    """Politica de SLA com precedencia projeto > categoria > prioridade."""
+
+    __tablename__ = "sla_policies"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    priority: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    category: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    project_code: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    first_response_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+    resolution_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class BusinessHoliday(Base):
+    __tablename__ = "business_holidays"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    holiday_date: Mapped[date] = mapped_column(Date, unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+
+
+class SystemAlert(Base):
+    """Estado persistente para deduplicar e resolver alertas operacionais."""
+
+    __tablename__ = "system_alerts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    message: Mapped[str] = mapped_column(String(1000), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="open", nullable=False, index=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 @event.listens_for(AuditEvent, "before_update")
 def _prevent_audit_event_update(_mapper, _connection, _target) -> None:
     raise ValueError("Eventos de auditoria nao podem ser alterados.")
@@ -682,7 +757,7 @@ def _backfill_ticket_workflow_data() -> None:
             .all()
         )
         for ticket in tickets:
-            initialize_sla(ticket)
+            initialize_sla(ticket, db=db)
         if tickets:
             db.commit()
     finally:

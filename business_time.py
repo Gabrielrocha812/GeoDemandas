@@ -7,8 +7,9 @@ from zoneinfo import ZoneInfo
 from config import settings
 
 
-def _is_business_day(value: datetime) -> bool:
+def _is_business_day(value: datetime, extra_holidays: set[str] | None = None) -> bool:
     holidays = {item.strip() for item in settings.SLA_HOLIDAYS.split(",") if item.strip()}
+    holidays.update(extra_holidays or set())
     return value.weekday() < 5 and value.date().isoformat() not in holidays
 
 
@@ -27,18 +28,18 @@ def _bounds(value: datetime) -> tuple[datetime, datetime]:
     return start, end
 
 
-def _next_open(value: datetime) -> datetime:
+def _next_open(value: datetime, extra_holidays: set[str] | None = None) -> datetime:
     current = value
     while True:
         start, end = _bounds(current)
-        if _is_business_day(current) and current < end:
+        if _is_business_day(current, extra_holidays) and current < end:
             return max(current, start)
         current = (current + timedelta(days=1)).replace(hour=settings.SLA_BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
 
 
-def add_business_hours(value: datetime, hours: float) -> datetime:
+def add_business_hours(value: datetime, hours: float, *, holidays: set[str] | None = None) -> datetime:
     """Soma horas úteis e devolve UTC ingênuo, como as colunas legadas."""
-    current = _next_open(_local(value))
+    current = _next_open(_local(value), holidays)
     remaining = timedelta(hours=max(0, hours))
     while remaining > timedelta(0):
         _, end = _bounds(current)
@@ -46,11 +47,11 @@ def add_business_hours(value: datetime, hours: float) -> datetime:
         if remaining <= available:
             return _utc_naive(current + remaining)
         remaining -= available
-        current = _next_open((current + timedelta(days=1)).replace(hour=settings.SLA_BUSINESS_START_HOUR, minute=0, second=0, microsecond=0))
+        current = _next_open((current + timedelta(days=1)).replace(hour=settings.SLA_BUSINESS_START_HOUR, minute=0, second=0, microsecond=0), holidays)
     return _utc_naive(current)
 
 
-def business_hours_between(start: datetime, end: datetime) -> float:
+def business_hours_between(start: datetime, end: datetime, *, holidays: set[str] | None = None) -> float:
     """Conta somente a interseção com dias úteis e a jornada configurada."""
     local_start, local_end = _local(start), _local(end)
     if local_end <= local_start:
@@ -58,7 +59,7 @@ def business_hours_between(start: datetime, end: datetime) -> float:
     total = timedelta(0)
     day = local_start.replace(hour=0, minute=0, second=0, microsecond=0)
     while day.date() <= local_end.date():
-        if _is_business_day(day):
+        if _is_business_day(day, holidays):
             open_at, close_at = _bounds(day)
             interval_start = max(local_start, open_at)
             interval_end = min(local_end, close_at)

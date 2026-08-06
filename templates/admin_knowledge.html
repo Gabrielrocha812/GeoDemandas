@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Administrar conhecimento | GeoDemandas{% endblock %}
+{% block content %}
+<div class="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+  <section class="premium-card p-6"><p class="text-xs font-black uppercase tracking-wider text-brandt">Novo conteúdo</p><h1 class="mt-2 text-2xl font-black text-slate-950">Publicar artigo</h1>
+    <form method="post" class="mt-6 space-y-4">
+      <div><label class="form-label" for="title">Título</label><input class="form-input min-h-12" id="title" name="title" required minlength="4" maxlength="220"></div>
+      <div><label class="form-label" for="category">Categoria</label><input class="form-input min-h-12" id="category" name="category" required maxlength="120"></div>
+      <div><label class="form-label" for="summary">Resumo</label><textarea class="form-input" id="summary" name="summary" required minlength="10" maxlength="500" rows="3"></textarea></div>
+      <div><label class="form-label" for="content">Conteúdo</label><textarea class="form-input" id="content" name="content" required minlength="20" rows="10"></textarea></div>
+      <div><label class="form-label" for="tags">Tags</label><input class="form-input min-h-12" id="tags" name="tags" maxlength="500" placeholder="vpn, acesso, projeto"></div>
+      <label class="flex min-h-11 items-center gap-3"><input type="checkbox" name="published" value="true" checked> <span class="font-bold text-slate-700">Publicar imediatamente</span></label>
+      <button class="btn-primary w-full min-h-12" type="submit">Salvar artigo</button>
+    </form>
+  </section>
+  <section><div class="mb-4 flex items-center justify-between"><div><p class="text-xs font-black uppercase tracking-wider text-brandt">Biblioteca</p><h2 class="text-2xl font-black text-slate-950">Artigos cadastrados</h2></div><a href="/conhecimento" class="btn-secondary">Visualizar base</a></div>
+    <div class="space-y-3">{% for article in articles %}<article class="premium-card flex flex-col gap-4 p-5 sm:flex-row sm:items-center"><div class="min-w-0 flex-1"><div class="flex flex-wrap gap-2"><span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{{ article.category }}</span><span class="rounded-full px-2.5 py-1 text-xs font-bold {{ 'bg-emerald-50 text-emerald-700' if article.is_published else 'bg-amber-50 text-amber-700' }}">{{ 'Publicado' if article.is_published else 'Rascunho' }}</span></div><h3 class="mt-2 font-black text-slate-900">{{ article.title }}</h3><p class="mt-1 text-sm text-slate-500">{{ article.summary }}</p></div><form method="post" action="/admin/conhecimento/{{ article.id }}/publicacao"><button class="btn-secondary min-h-11" type="submit">{{ 'Arquivar' if article.is_published else 'Publicar' }}</button></form></article>{% else %}<div class="premium-card p-10 text-center text-slate-500">Nenhum artigo cadastrado.</div>{% endfor %}</div>
+  </section>
+</div>
+{% endblock %}
